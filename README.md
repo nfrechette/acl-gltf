@@ -1,6 +1,7 @@
 [![CLA assistant](https://cla-assistant.io/readme/badge/nfrechette/acl-gltf)](https://cla-assistant.io/nfrechette/acl-gltf)
 [![Build status](https://ci.appveyor.com/api/projects/status/2h28i0j85nkq2e1e/branch/develop?svg=true)](https://ci.appveyor.com/project/nfrechette/acl-gltf)
 [![Build Status](https://travis-ci.org/nfrechette/acl-gltf.svg?branch=develop)](https://travis-ci.org/nfrechette/acl-gltf)
+[![Sonar Status](https://sonarcloud.io/api/project_badges/measure?project=nfrechette_acl-gltf&metric=alert_status)](https://sonarcloud.io/dashboard?id=nfrechette_acl-gltf)
 [![GitHub release](https://img.shields.io/github/release/nfrechette/acl-gltf.svg)](https://github.com/nfrechette/acl-gltf/releases)
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/nfrechette/acl-gltf/master/LICENSE)
 
