@@ -1,4 +1,5 @@
 [![CLA assistant](https://cla-assistant.io/readme/badge/nfrechette/acl-gltf)](https://cla-assistant.io/nfrechette/acl-gltf)
+[![Build Status](https://travis-ci.org/nfrechette/acl-gltf.svg?branch=develop)](https://travis-ci.org/nfrechette/acl-gltf)
 [![GitHub release](https://img.shields.io/github/release/nfrechette/acl-gltf.svg)](https://github.com/nfrechette/acl-gltf/releases)
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/nfrechette/acl-gltf/master/LICENSE)
 
