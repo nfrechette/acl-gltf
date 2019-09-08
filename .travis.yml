@@ -72,3 +72,9 @@ script:
     - python3 make.py -clean -build -compiler ${COMPILER} -config Debug -cpu x64
     - python3 make.py -clean -build -compiler ${COMPILER} -config Release -cpu x64
     - python3 make.py -clean -build -compiler ${COMPILER} -config Release -cpu x64 -nosimd
+    # Only run sonarcloud on non-PRs
+    - 'if [[ "$SONARCLOUD" == "1" && "$TRAVIS_PULL_REQUEST" == "false" ]]; then
+      python3 make.py -clean -compiler ${COMPILER} -config Release -cpu x64;
+      build-wrapper-linux-x86-64 --out-dir bw_output python3 make.py -build -compiler ${COMPILER} -config Release -cpu x64;
+      sonar-scanner;
+      fi'
