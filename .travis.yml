@@ -1,4 +1,4 @@
-dist: trusty
+dist: xenial
 sudo: required
 
 language: cpp
@@ -21,6 +21,10 @@ matrix:
     - os: linux
       env: COMPILER=gcc8 TOOLCHAIN=gcc PACKAGES="g++-8 g++-8-multilib g++-multilib"
 
+    # Linux gcc9
+    - os: linux
+      env: COMPILER=gcc9 TOOLCHAIN=gcc PACKAGES="g++-9 g++-9-multilib g++-multilib"
+
     # Linux clang4
     - os: linux
       env: COMPILER=clang4 TOOLCHAIN=clang PACKAGES="clang-4.0 libstdc++-5-dev libc6-dev-i386 g++-5-multilib g++-multilib"
@@ -36,6 +40,18 @@ matrix:
     - os: linux
       env: COMPILER=clang6 TOOLCHAIN=clang PACKAGES="clang-6.0 libstdc++-5-dev libc6-dev-i386 g++-5-multilib g++-multilib"
 
+    # Linux clang7
+    - os: linux
+      env: COMPILER=clang7 TOOLCHAIN=clang PACKAGES="clang-7 libstdc++-5-dev libc6-dev-i386 g++-5-multilib g++-multilib"
+
+    # Linux clang8
+    - os: linux
+      env: COMPILER=clang8 TOOLCHAIN=clang PACKAGES="clang-8 libstdc++-5-dev libc6-dev-i386 g++-5-multilib g++-multilib"
+
+    # Linux clang9
+    - os: linux
+      env: COMPILER=clang9 TOOLCHAIN=clang PACKAGES="clang-9 libstdc++-5-dev libc6-dev-i386 g++-5-multilib g++-multilib"
+
     # OS X xcode8
     - os: osx
       osx_image: xcode8.3
@@ -48,27 +64,33 @@ matrix:
 
     # OS X xcode10
     - os: osx
-      osx_image: xcode10.1
+      osx_image: xcode10.3
       env: COMPILER=osx TOOLCHAIN=xcode
+
+    # OS X xcode11
+    - os: osx
+      osx_image: xcode11.2
+      env: COMPILER=osx TOOLCHAIN=xcode NOX86=1
 
 before_install:
     - if [[ "$TOOLCHAIN" == "clang" ]]; then curl -sSL "http://apt.llvm.org/llvm-snapshot.gpg.key" | sudo -E apt-key add - ; fi
-    - if [[ "$COMPILER" == "clang4" ]]; then echo "deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-4.0 main" | sudo tee -a /etc/apt/sources.list > /dev/null ; fi
-    - if [[ "$COMPILER" == "clang5" ]]; then echo "deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-5.0 main" | sudo tee -a /etc/apt/sources.list > /dev/null ; fi
-    - if [[ "$COMPILER" == "clang6" ]]; then echo "deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-6.0 main" | sudo tee -a /etc/apt/sources.list > /dev/null ; fi
+    - if [[ "$COMPILER" == "clang4" ]]; then echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-4.0 main" | sudo tee -a /etc/apt/sources.list > /dev/null ; fi
+    - if [[ "$COMPILER" == "clang5" ]]; then echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-5.0 main" | sudo tee -a /etc/apt/sources.list > /dev/null ; fi
+    - if [[ "$COMPILER" == "clang6" ]]; then echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main" | sudo tee -a /etc/apt/sources.list > /dev/null ; fi
+    - if [[ "$COMPILER" == "clang7" ]]; then echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-7 main" | sudo tee -a /etc/apt/sources.list > /dev/null ; fi
+    - if [[ "$COMPILER" == "clang8" ]]; then echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-8 main" | sudo tee -a /etc/apt/sources.list > /dev/null ; fi
+    - if [[ "$COMPILER" == "clang9" ]]; then echo "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-9 main" | sudo tee -a /etc/apt/sources.list > /dev/null ; fi
     - 'if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
       sudo -E apt-add-repository -y "ppa:ubuntu-toolchain-r/test";
       sudo -E apt-get -yq update;
       sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install ${PACKAGES};
       fi'
-    - 'if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
-      brew update || true;
-      brew upgrade python || true;
-      fi'
 
 script:
-    - python3 make.py -clean -build -compiler ${COMPILER} -config Debug -cpu x86
-    - python3 make.py -clean -build -compiler ${COMPILER} -config Release -cpu x86
+    - 'if [[ "$NOX86" != "1" ]]; then
+      python3 make.py -clean -build -compiler ${COMPILER} -config Debug -cpu x86;
+      python3 make.py -clean -build -compiler ${COMPILER} -config Release -cpu x86;
+      fi'
     - python3 make.py -clean -build -compiler ${COMPILER} -config Debug -cpu x64
     - python3 make.py -clean -build -compiler ${COMPILER} -config Release -cpu x64
     - python3 make.py -clean -build -compiler ${COMPILER} -config Release -cpu x64 -nosimd
