@@ -1,3 +1,6 @@
 [submodule "external/tinygltf"]
 	path = external/tinygltf
 	url = https://github.com/syoyo/tinygltf.git
+[submodule "external/acl"]
+	path = external/acl
+	url = https://github.com/nfrechette/acl.git
