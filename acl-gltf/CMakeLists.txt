@@ -11,9 +11,13 @@ include_directories("${PROJECT_SOURCE_DIR}/../external/tinygltf")
 file(GLOB_RECURSE ALL_MAIN_SOURCE_FILES LIST_DIRECTORIES false
 	${PROJECT_SOURCE_DIR}/sources/*.cpp)
 
+# Add every natvis file
+file(GLOB_RECURSE NATVIS_FILES LIST_DIRECTORIES false
+	${PROJECT_SOURCE_DIR}/../*.natvis)
+
 create_source_groups("${ALL_MAIN_SOURCE_FILES}" ${PROJECT_SOURCE_DIR})
 
-add_executable(${PROJECT_NAME} ${ALL_TEST_SOURCE_FILES} ${ALL_MAIN_SOURCE_FILES})
+add_executable(${PROJECT_NAME} ${ALL_TEST_SOURCE_FILES} ${ALL_MAIN_SOURCE_FILES} ${NATVIS_FILES})
 
 setup_default_compiler_flags(${PROJECT_NAME})
 
