@@ -9,7 +9,8 @@ include_directories("${PROJECT_SOURCE_DIR}/../external/tinygltf")
 
 # Grab all of our source files
 file(GLOB_RECURSE ALL_MAIN_SOURCE_FILES LIST_DIRECTORIES false
-	${PROJECT_SOURCE_DIR}/sources/*.cpp)
+	${PROJECT_SOURCE_DIR}/sources/*.cpp
+	${PROJECT_SOURCE_DIR}/sources/*.h)
 
 # Add every natvis file
 file(GLOB_RECURSE NATVIS_FILES LIST_DIRECTORIES false
