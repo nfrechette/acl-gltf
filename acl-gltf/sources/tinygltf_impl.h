@@ -1,3 +1,5 @@
+#pragma once
+
 ////////////////////////////////////////////////////////////////////////////////
 // The MIT License (MIT)
 //
@@ -22,26 +24,21 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "command_line_options.h"
-#include "compress_gltf.h"
+// Include TinyGLTF here so we can control the warnings we suppress
 
-#include <acl/core/error.h>
-#include <acl/core/floating_point_exceptions.h>
+#define TINYGLTF_NO_EXTERNAL_IMAGE
 
-int main(int argc, char* argv[])
-{
-	command_line_options options;
-	const bool arguments_valid = parse_command_line_arguments(argc, argv, options);
-	if (!arguments_valid)
-		return 1;
+#if defined(_MSC_VER)
+	#pragma warning(push)
+	#pragma warning(disable: 4701)	// potentially uninitialized local variable used
+	#pragma warning(disable: 4702)	// unreachable code
+	#pragma warning(disable: 4996)	// sprintf CRT security
+#endif
 
-	// Disable floating point exceptions
-	acl::scope_disable_fp_exceptions fp_off;
+#include "tiny_gltf.h"
 
-	if (options.compress)
-		return compress_gltf(options) ? 0 : 1;
+#if defined(_MSC_VER)
+	#pragma warning(pop)
+#endif
 
-	// Unknown state, should never happen
-	ACL_ASSERT(false, "Unknown state");
-	return 1;
-}
+static const char* k_acl_gltf_extension_str = "ACL_compression";
