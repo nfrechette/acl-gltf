@@ -160,8 +160,6 @@ static track_type make_track_ref(const tinygltf::Model& model, const tinygltf::A
 
 static float find_clip_duration(const tinygltf::Model& model, const tinygltf::Animation& animation)
 {
-	const acl::track_desc_scalarf dummy_desc = { 0, 0.0F, 0.0F };
-
 	float max_duration = 0.0F;
 	size_t max_num_samples = 0;
 
@@ -201,8 +199,6 @@ static float find_clip_sample_rate(const tinygltf::Model& model, const tinygltf:
 	const float target_sample_rate = 30.0F;
 	if (duration == 0.0F || duration == std::numeric_limits<float>::infinity())
 		return target_sample_rate;
-
-	const acl::track_desc_scalarf dummy_desc = { 0, 0.0F, 0.0F };
 
 	// First find the smallest amount of time between two samples, this is potentially
 	// our sample rate.
@@ -516,7 +512,7 @@ bool compress_gltf(const command_line_options& options)
 	if (!is_already_compressed_with_acl)
 	{
 		acl::ANSIAllocator allocator;
-		const uint16_t num_bones = static_cast<uint16_t>(model.nodes.size());
+
 		const std::vector<uint16_t> node_parent_indices = build_node_parent_indices(model);
 		const acl::RigidSkeleton skeleton = build_skeleton(model, node_parent_indices, allocator);
 
