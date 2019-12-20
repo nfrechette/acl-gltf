@@ -246,7 +246,7 @@ static float find_clip_sample_rate(const tinygltf::Model& model, const tinygltf:
 		for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
 		{
 			const float sample_time = sample_times[sample_index];
-			const float remainder = std::fmodf(sample_time, smallest_delta_time);
+			const float remainder = std::fmod(sample_time, smallest_delta_time);
 			if (remainder > 0.001F)
 			{
 				is_sample_rate_valid = false;
