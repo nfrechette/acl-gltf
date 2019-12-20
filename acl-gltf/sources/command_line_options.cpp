@@ -24,6 +24,8 @@
 
 #include "command_line_options.h"
 
+#include <cstring>
+
 command_line_options::command_line_options()
 	: compress(false)
 	, input_filename0()
