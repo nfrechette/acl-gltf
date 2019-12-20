@@ -151,7 +151,7 @@ static track_type make_track_ref(const tinygltf::Model& model, const tinygltf::A
 
 	const size_t start_offset = buffer_view.byteOffset + sample_time_accessor.byteOffset;
 	const int sample_stride = sample_time_accessor.ByteStride(buffer_view);
-	ACL_ASSERT(sample_stride >= sizeof(sample_type), "Invalid sample stride");
+	ACL_ASSERT(sample_stride >= static_cast<int>(sizeof(sample_type)), "Invalid sample stride");
 
 	const acl::track_desc_scalarf dummy_desc = { 0, 0.0F, 0.0F };
 
