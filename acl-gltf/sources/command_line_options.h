@@ -1,3 +1,5 @@
+#pragma once
+
 ////////////////////////////////////////////////////////////////////////////////
 // The MIT License (MIT)
 //
@@ -22,26 +24,19 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "command_line_options.h"
-#include "compress_gltf.h"
+#include <string>
 
-#include <acl/core/error.h>
-#include <acl/core/floating_point_exceptions.h>
-
-int main(int argc, char* argv[])
+struct command_line_options
 {
-	command_line_options options;
-	const bool arguments_valid = parse_command_line_arguments(argc, argv, options);
-	if (!arguments_valid)
-		return 1;
+	bool			compress;
+	//bool			decompress;
+	//bool			diff;
 
-	// Disable floating point exceptions
-	acl::scope_disable_fp_exceptions fp_off;
+	std::string		input_filename0;
+	//std::string		input_filename1;
+	std::string		output_filename;
 
-	if (options.compress)
-		return compress_gltf(options) ? 0 : 1;
+	command_line_options();
+};
 
-	// Unknown state, should never happen
-	ACL_ASSERT(false, "Unknown state");
-	return 1;
-}
+bool parse_command_line_arguments(int argc, char* argv[], command_line_options& out_options);
