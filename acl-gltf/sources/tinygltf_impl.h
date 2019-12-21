@@ -41,4 +41,4 @@
 	#pragma warning(pop)
 #endif
 
-static const char* k_acl_gltf_extension_str = "ACL_compression";
+extern const char* k_acl_gltf_extension_str;
