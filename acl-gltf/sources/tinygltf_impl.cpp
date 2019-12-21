@@ -28,3 +28,5 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 
 #include "tinygltf_impl.h"
+
+const char* k_acl_gltf_extension_str = "ACL_compression";
