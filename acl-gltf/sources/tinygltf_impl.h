@@ -33,12 +33,17 @@
 	#pragma warning(disable: 4701)	// potentially uninitialized local variable used
 	#pragma warning(disable: 4702)	// unreachable code
 	#pragma warning(disable: 4996)	// sprintf CRT security
+#elif defined(__GNUG__)
+	#pragma GCC diagnostic push
+	#pragma GCC diagnostic ignored "-Wignored-qualifiers"
 #endif
 
 #include "tiny_gltf.h"
 
 #if defined(_MSC_VER)
 	#pragma warning(pop)
+#elif defined(__GNUG__)
+	#pragma GCC diagnostic pop
 #endif
 
 extern const char* k_acl_gltf_extension_str;
