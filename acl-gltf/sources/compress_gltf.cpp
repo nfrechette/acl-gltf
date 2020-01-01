@@ -23,6 +23,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #include "command_line_options.h"
+#include "compress_gltf.h"
 #include "tinygltf_impl.h"
 
 #include <acl/algorithm/uniformly_sampled/decoder.h>
@@ -71,6 +72,12 @@ static bool validate_input(const tinygltf::Model& model)
 	if (model.animations.size() >= std::numeric_limits<uint16_t>::max())
 	{
 		printf("glTF input contains more animations than ACL can handle\n");
+		return false;
+	}
+
+	if (std::find(model.extensionsUsed.begin(), model.extensionsUsed.end(), k_acl_gltf_extension_str) != model.extensionsUsed.end())
+	{
+		printf("Cannot compress a glTF input that already uses ACL\n");
 		return false;
 	}
 
@@ -497,7 +504,7 @@ bool compress_gltf(const command_line_options& options)
 
 	if (!success)
 	{
-		printf("Failed to parse glTF\n");
+		printf("Failed to parse input glTF\n");
 		return false;
 	}
 
@@ -508,110 +515,101 @@ bool compress_gltf(const command_line_options& options)
 	bool any_compressed = false;
 	std::vector<int> animation_buffers;
 
-	const bool is_already_compressed_with_acl = std::find(model.extensionsUsed.begin(), model.extensionsUsed.end(), std::string(k_acl_gltf_extension_str)) != model.extensionsUsed.end();
-	if (!is_already_compressed_with_acl)
+	acl::ANSIAllocator allocator;
+
+	const std::vector<uint16_t> node_parent_indices = build_node_parent_indices(model);
+	const acl::RigidSkeleton skeleton = build_skeleton(model, node_parent_indices, allocator);
+
+	for (tinygltf::Animation& animation : model.animations)
 	{
-		acl::ANSIAllocator allocator;
+		printf("Processing animation '%s' ...\n", animation.name.empty() ? "<unnamed>" : animation.name.c_str());
 
-		const std::vector<uint16_t> node_parent_indices = build_node_parent_indices(model);
-		const acl::RigidSkeleton skeleton = build_skeleton(model, node_parent_indices, allocator);
+		const acl::AnimationClip clip = build_clip(model, animation, skeleton, allocator);
 
-		for (tinygltf::Animation& animation : model.animations)
+		printf("    %.4f seconds (%u samples @ %.2f FPS)\n", clip.get_duration(), clip.get_num_samples(), clip.get_sample_rate());
+
+		acl::CompressionSettings settings = acl::get_default_compression_settings();
+
+		// glTF units are in meters but ACL default thresholds are in centimeters
+		settings.constant_translation_threshold /= 100.0F;
+		settings.error_threshold /= 100.0F;
+
+		acl::qvvf_transform_error_metric error_metric;
+		settings.error_metric = &error_metric;
+
+		// Compress our animation
+		acl::OutputStats stats;
+		acl::CompressedClip* compressed_clip = nullptr;
+		const acl::ErrorResult result = acl::uniformly_sampled::compress_clip(allocator, clip, settings, compressed_clip, stats);
+
+		if (result.any())
 		{
-			printf("Processing animation '%s' ...\n", animation.name.empty() ? "<unnamed>" : animation.name.c_str());
-
-			const acl::AnimationClip clip = build_clip(model, animation, skeleton, allocator);
-
-			printf("    %.4f seconds (%u samples @ %.2f FPS)\n", clip.get_duration(), clip.get_num_samples(), clip.get_sample_rate());
-
-			acl::CompressionSettings settings = acl::get_default_compression_settings();
-
-			// glTF units are in meters but ACL default thresholds are in centimeters
-			settings.constant_translation_threshold /= 100.0F;
-			settings.error_threshold /= 100.0F;
-
-			acl::qvvf_transform_error_metric error_metric;
-			settings.error_metric = &error_metric;
-
-			// Compress our animation
-			acl::OutputStats stats;
-			acl::CompressedClip* compressed_clip = nullptr;
-			const acl::ErrorResult result = acl::uniformly_sampled::compress_clip(allocator, clip, settings, compressed_clip, stats);
-
-			if (result.any())
-			{
-				printf("Failed to compress animation: %s\n", result.c_str());
-				any_failed = true;
-				continue;
-			}
-
-			const uint32_t raw_animation_size = get_raw_animation_size(model, animation);
-			const uint32_t compressed_animation_size = compressed_clip->get_size();
-			const float compression_ratio = float(raw_animation_size) / float(compressed_animation_size);
-
-			printf("    Compressed %u glTF bytes into %u ACL bytes (ratio: %.2f : 1)\n", raw_animation_size, compressed_animation_size, compression_ratio);
-
-			// Measure the compression error
-			acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context;
-			context.initialize(*compressed_clip);
-			const acl::BoneError bone_error = calculate_compressed_clip_error(allocator, clip, error_metric, context);
-
-			printf("    Largest error of %.2f mm on transform %u ('%s') @ %.2f sec\n", bone_error.error * 100.0F * 100.0F, bone_error.index, skeleton.get_bone(bone_error.index).name.c_str(), bone_error.sample_time);
-
-			// Copy the compressed data into a new buffer
-			tinygltf::Buffer compressed_buffer;
-			compressed_buffer.name = animation.name + "_acl";
-			compressed_buffer.data.resize(compressed_animation_size);
-			std::memcpy(compressed_buffer.data.data(), compressed_clip, compressed_animation_size);
-			model.buffers.push_back(std::move(compressed_buffer));
-
-			// Free the compressed data, we don't need it anymore
-			allocator.deallocate(compressed_clip, compressed_animation_size);
-
-			// Add a buffer view
-			tinygltf::BufferView compressed_buffer_view;
-			compressed_buffer_view.name = animation.name + "_acl";
-			compressed_buffer_view.buffer = static_cast<int>(model.buffers.size() - 1);
-			compressed_buffer_view.byteOffset = 0;
-			compressed_buffer_view.byteLength = compressed_animation_size;
-			compressed_buffer_view.byteStride = 0;
-			compressed_buffer_view.target = TINYGLTF_TARGET_ARRAY_BUFFER;
-
-			model.bufferViews.push_back(std::move(compressed_buffer_view));
-
-			// Mark our old buffer views for removal and update to new buffer view
-			for (tinygltf::AnimationChannel& channel : animation.channels)
-			{
-				tinygltf::AnimationSampler& sampler = animation.samplers[channel.sampler];
-				tinygltf::Accessor& sample_time_accessor = model.accessors[sampler.input];
-				tinygltf::Accessor& sample_value_accessor = model.accessors[sampler.output];
-
-				// Add the buffers we use so we can clear them later
-				animation_buffers.push_back(model.bufferViews[sample_time_accessor.bufferView].buffer);
-				animation_buffers.push_back(model.bufferViews[sample_value_accessor.bufferView].buffer);
-
-				// Clear our old buffer views
-				model.bufferViews[sample_time_accessor.bufferView] = tinygltf::BufferView();
-				model.bufferViews[sample_value_accessor.bufferView] = tinygltf::BufferView();
-
-				// Set our new buffer view
-				sample_time_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
-				sample_value_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
-			}
-
-			any_compressed = true;
+			printf("Failed to compress animation: %s\n", result.c_str());
+			any_failed = true;
+			continue;
 		}
+
+		const uint32_t raw_animation_size = get_raw_animation_size(model, animation);
+		const uint32_t compressed_animation_size = compressed_clip->get_size();
+		const float compression_ratio = float(raw_animation_size) / float(compressed_animation_size);
+
+		printf("    Compressed %u glTF bytes into %u ACL bytes (ratio: %.2f : 1)\n", raw_animation_size, compressed_animation_size, compression_ratio);
+
+		// Measure the compression error
+		acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context;
+		context.initialize(*compressed_clip);
+		const acl::BoneError bone_error = calculate_compressed_clip_error(allocator, clip, error_metric, context);
+
+		printf("    Largest error of %.2f mm on transform %u ('%s') @ %.2f sec\n", bone_error.error * 100.0F * 100.0F, bone_error.index, skeleton.get_bone(bone_error.index).name.c_str(), bone_error.sample_time);
+
+		// Copy the compressed data into a new buffer
+		tinygltf::Buffer compressed_buffer;
+		compressed_buffer.name = animation.name + "_acl";
+		compressed_buffer.data.resize(compressed_animation_size);
+		std::memcpy(compressed_buffer.data.data(), compressed_clip, compressed_animation_size);
+		model.buffers.push_back(std::move(compressed_buffer));
+
+		// Free the compressed data, we don't need it anymore
+		allocator.deallocate(compressed_clip, compressed_animation_size);
+
+		// Add a buffer view
+		tinygltf::BufferView compressed_buffer_view;
+		compressed_buffer_view.name = animation.name + "_acl";
+		compressed_buffer_view.buffer = static_cast<int>(model.buffers.size() - 1);
+		compressed_buffer_view.byteOffset = 0;
+		compressed_buffer_view.byteLength = compressed_animation_size;
+		compressed_buffer_view.byteStride = 0;
+		compressed_buffer_view.target = TINYGLTF_TARGET_ARRAY_BUFFER;
+
+		model.bufferViews.push_back(std::move(compressed_buffer_view));
+
+		// Mark our old buffer views for removal and update to new buffer view
+		for (tinygltf::AnimationChannel& channel : animation.channels)
+		{
+			tinygltf::AnimationSampler& sampler = animation.samplers[channel.sampler];
+			tinygltf::Accessor& sample_time_accessor = model.accessors[sampler.input];
+			tinygltf::Accessor& sample_value_accessor = model.accessors[sampler.output];
+
+			// Add the buffers we use so we can clear them later
+			animation_buffers.push_back(model.bufferViews[sample_time_accessor.bufferView].buffer);
+			animation_buffers.push_back(model.bufferViews[sample_value_accessor.bufferView].buffer);
+
+			// Clear our old buffer views
+			model.bufferViews[sample_time_accessor.bufferView] = tinygltf::BufferView();
+			model.bufferViews[sample_value_accessor.bufferView] = tinygltf::BufferView();
+
+			// Set our new buffer view
+			sample_time_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
+			sample_value_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
+		}
+
+		any_compressed = true;
 	}
-	else
-		printf("Input is already compressed with ACL\n");
 
-	if (any_compressed || is_already_compressed_with_acl)
+	if (any_compressed)
 	{
-		if (!is_already_compressed_with_acl)
-		{
-			model.extensionsRequired.push_back(k_acl_gltf_extension_str);
-			model.extensionsUsed.push_back(k_acl_gltf_extension_str);
-		}
+		model.extensionsRequired.push_back(k_acl_gltf_extension_str);
+		model.extensionsUsed.push_back(k_acl_gltf_extension_str);
 
 		// Clear any buffers the animation data used if we managed to compress everything.
 		// This assumes that buffers referenced by raw animation data contain only raw animation data
