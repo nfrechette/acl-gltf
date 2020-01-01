@@ -27,7 +27,7 @@
 #include <cstring>
 
 command_line_options::command_line_options()
-	: compress(false)
+	: action(command_line_action::none)
 	, input_filename0()
 	, output_filename()
 {}
@@ -39,6 +39,12 @@ static void print_usage()
 	printf("Usage: acl-gltf --diff <input_file1> <input_file2>\n");
 }
 
+static bool is_str_equal(const char* argument0, const char* argument1)
+{
+	const size_t length1 = std::strlen(argument1);
+	return std::strncmp(argument0, argument1, length1) == 0;
+}
+
 bool parse_command_line_arguments(int argc, char* argv[], command_line_options& out_options)
 {
 	command_line_options options;
@@ -47,10 +53,15 @@ bool parse_command_line_arguments(int argc, char* argv[], command_line_options& 
 	{
 		const char* argument = argv[arg_index];
 
-		const char* compress_option = "--compress";
-		size_t option_length = std::strlen(compress_option);
-		if (std::strncmp(argument, compress_option, option_length) == 0)
+		if (is_str_equal(argument, "--compress"))
 		{
+			if (options.action != command_line_action::none)
+			{
+				printf("Only one command can be provided\n");
+				print_usage();
+				return false;
+			}
+
 			if (arg_index + 1 == argc)
 			{
 				printf("--compress requires an input glTF/glB file\n");
@@ -60,7 +71,7 @@ bool parse_command_line_arguments(int argc, char* argv[], command_line_options& 
 
 			arg_index++;
 
-			options.compress = true;
+			options.action = command_line_action::compress;
 			options.input_filename0 = argv[arg_index];
 
 			// If we have no output file, we'll just end up printing the stats which is fine
@@ -74,7 +85,7 @@ bool parse_command_line_arguments(int argc, char* argv[], command_line_options& 
 		// Unknown arguments are ignored silently
 	}
 
-	if (!options.compress)
+	if (options.action == command_line_action::none)
 	{
 		// No options provided, print usage
 		print_usage();

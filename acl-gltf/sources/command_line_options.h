@@ -26,15 +26,19 @@
 
 #include <string>
 
+enum class command_line_action
+{
+	none,
+	compress,
+};
+
 struct command_line_options
 {
-	bool			compress;
-	//bool			decompress;
-	//bool			diff;
+	command_line_action		action;
 
-	std::string		input_filename0;
-	//std::string		input_filename1;
-	std::string		output_filename;
+	std::string				input_filename0;
+	//std::string			input_filename1;
+	std::string				output_filename;
 
 	command_line_options();
 };
