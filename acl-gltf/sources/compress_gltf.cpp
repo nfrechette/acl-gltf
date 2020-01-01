@@ -598,9 +598,15 @@ bool compress_gltf(const command_line_options& options)
 			model.bufferViews[sample_time_accessor.bufferView] = tinygltf::BufferView();
 			model.bufferViews[sample_value_accessor.bufferView] = tinygltf::BufferView();
 
-			// Set our new buffer view
+			// Set our new buffer view and related settings
 			sample_time_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
 			sample_value_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
+			sample_time_accessor.byteOffset = 0;
+			sample_value_accessor.byteOffset = 0;
+			sample_time_accessor.componentType = TINYGLTF_COMPONENT_TYPE_BYTE;
+			sample_value_accessor.componentType = TINYGLTF_COMPONENT_TYPE_BYTE;
+			sample_time_accessor.type = TINYGLTF_TYPE_SCALAR;
+			sample_value_accessor.type = TINYGLTF_TYPE_SCALAR;
 		}
 
 		any_compressed = true;
