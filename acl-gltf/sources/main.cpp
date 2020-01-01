@@ -38,10 +38,14 @@ int main(int argc, char* argv[])
 	// Disable floating point exceptions
 	acl::scope_disable_fp_exceptions fp_off;
 
-	if (options.compress)
+	switch (options.action)
+	{
+	case command_line_action::none:
+	default:
+		// Unknown state, should never happen
+		ACL_ASSERT(false, "Unknown state");
+		return 1;
+	case command_line_action::compress:
 		return compress_gltf(options) ? 0 : 1;
-
-	// Unknown state, should never happen
-	ACL_ASSERT(false, "Unknown state");
-	return 1;
+	}
 }
