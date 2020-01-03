@@ -1,7 +1,9 @@
+#pragma once
+
 ////////////////////////////////////////////////////////////////////////////////
 // The MIT License (MIT)
 //
-// Copyright (c) 2019 Nicholas Frechette
+// Copyright (c) 2020 Nicholas Frechette
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,39 +24,4 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#include "command_line_options.h"
-#include "compress_gltf.h"
-#include "decompress_gltf.h"
-
-#include <acl/core/error.h>
-#include <acl/core/floating_point_exceptions.h>
-
-int main(int argc, char* argv[])
-{
-	command_line_options options;
-	const bool arguments_valid = parse_command_line_arguments(argc, argv, options);
-	if (!arguments_valid)
-		return 1;
-
-	// Disable floating point exceptions
-	acl::scope_disable_fp_exceptions fp_off;
-
-	int exit_code = 0;
-	switch (options.action)
-	{
-	case command_line_action::none:
-	default:
-		// Unknown state, should never happen
-		ACL_ASSERT(false, "Unknown state");
-		exit_code = 1;
-		break;
-	case command_line_action::compress:
-		exit_code = compress_gltf(options) ? 0 : 1;
-		break;
-	case command_line_action::decompress:
-		exit_code = decompress_gltf(options) ? 0 : 1;
-		break;
-	}
-
-	return exit_code;
-}
+bool decompress_gltf(const struct command_line_options& options);
