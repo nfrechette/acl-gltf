@@ -200,8 +200,8 @@ bool compress_gltf(const command_line_options& options)
 			animation_buffers.push_back(model.bufferViews[sample_value_accessor.bufferView].buffer);
 
 			// Clear our old buffer views
-			model.bufferViews[sample_time_accessor.bufferView] = tinygltf::BufferView();
-			model.bufferViews[sample_value_accessor.bufferView] = tinygltf::BufferView();
+			reset_buffer_view(model.bufferViews[sample_time_accessor.bufferView]);
+			reset_buffer_view(model.bufferViews[sample_value_accessor.bufferView]);
 
 			// Set our new buffer view and related settings
 			sample_time_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
@@ -229,15 +229,7 @@ bool compress_gltf(const command_line_options& options)
 		if (!any_failed)
 		{
 			for (int buffer_index : animation_buffers)
-			{
-				model.buffers[buffer_index] = tinygltf::Buffer();
-
-				// HACK BEGIN
-				// Due to a bug in tinygltf, buffers with 0 length perform an invalid access
-				// Set them to 1 byte
-				model.buffers[buffer_index].data.resize(1);
-				// HACK END
-			}
+				reset_buffer(model.buffers[buffer_index]);
 		}
 
 		// We cannot remove the stale buffer and buffer view entries because we cannot safely remap old indices.

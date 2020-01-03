@@ -402,3 +402,28 @@ uint32_t get_raw_animation_size(const tinygltf::Model& model, const tinygltf::An
 
 	return raw_size;
 }
+
+void reset_buffer_view(tinygltf::BufferView& buffer_view)
+{
+	buffer_view.buffer = 0;		// Index must always be valid
+	buffer_view.byteLength = 0;	// Empty
+	buffer_view.byteOffset = 0;
+	buffer_view.byteStride = 0;
+	buffer_view.name.clear();
+	buffer_view.target = 0;		// TODO: Should this be set to TINYGLTF_TARGET_ARRAY_BUFFER ? glTF does not appear to define what is or isn't a valid value here
+	buffer_view.extras = tinygltf::Value();
+	buffer_view.dracoDecoded = false;
+}
+
+void reset_buffer(tinygltf::Buffer& buffer)
+{
+	// HACK BEGIN
+	// Due to a bug in tinygltf, buffers with 0 length perform an invalid access
+	// Set them to 1 byte
+	buffer.data.resize(1);
+	// HACK END
+
+	buffer.name.clear();
+	buffer.uri.clear();
+	buffer.extras = tinygltf::Value();
+}

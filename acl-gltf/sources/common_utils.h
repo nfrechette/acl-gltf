@@ -40,6 +40,9 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 
 uint32_t get_raw_animation_size(const tinygltf::Model& model, const tinygltf::Animation& animation);
 
+void reset_buffer_view(tinygltf::BufferView& buffer_view);
+void reset_buffer(tinygltf::Buffer& buffer);
+
 template<typename track_type>
 static track_type make_track_ref(const tinygltf::Model& model, const tinygltf::Accessor& sample_time_accessor)
 {

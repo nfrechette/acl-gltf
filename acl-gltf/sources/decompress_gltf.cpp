@@ -112,7 +112,7 @@ static bool is_animation_compressed_with_acl(const tinygltf::Model& model, const
 
 	const tinygltf::AnimationSampler& sampler = animation.samplers[animation.channels[0].sampler];
 	const tinygltf::Accessor& accessor = model.accessors[sampler.input];
-	out_acl_buffer_view_index = model.bufferViews[accessor.bufferView].buffer;
+	out_acl_buffer_view_index = accessor.bufferView;
 
 	return true;
 }
@@ -246,7 +246,6 @@ bool decompress_gltf(const command_line_options& options)
 
 	bool any_failed = false;
 	bool any_decompressed = false;
-	std::vector<int> animation_buffers;
 
 	acl::ANSIAllocator allocator;
 
@@ -264,12 +263,12 @@ bool decompress_gltf(const command_line_options& options)
 			continue;
 		}
 
-		animation_buffers.push_back(acl_buffer_view_index);
+		const int acl_buffer_index = model.bufferViews[acl_buffer_view_index].buffer;
 
 		acl::ClipHeader clip_header;
 		float clip_duration;
 		{
-			const tinygltf::Buffer& acl_buffer = model.buffers[acl_buffer_view_index];
+			const tinygltf::Buffer& acl_buffer = model.buffers[acl_buffer_index];
 
 			const acl::CompressedClip* compressed_clip = reinterpret_cast<const acl::CompressedClip*>(acl_buffer.data.data());
 			const acl::ErrorResult is_valid_result = compressed_clip->is_valid(true);
@@ -356,7 +355,7 @@ bool decompress_gltf(const command_line_options& options)
 
 		// Decompress our animation
 		{
-			const tinygltf::Buffer& acl_buffer = model.buffers[acl_buffer_view_index];
+			const tinygltf::Buffer& acl_buffer = model.buffers[acl_buffer_index];
 			const acl::CompressedClip* compressed_clip = reinterpret_cast<const acl::CompressedClip*>(acl_buffer.data.data());
 
 			acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context;
@@ -403,7 +402,7 @@ bool decompress_gltf(const command_line_options& options)
 
 		// Measure the compression error
 		{
-			const tinygltf::Buffer& acl_buffer = model.buffers[acl_buffer_view_index];
+			const tinygltf::Buffer& acl_buffer = model.buffers[acl_buffer_index];
 			const acl::CompressedClip* compressed_clip = reinterpret_cast<const acl::CompressedClip*>(acl_buffer.data.data());
 
 			const acl::AnimationClip clip = build_clip(model, animation, skeleton, allocator);
@@ -418,6 +417,10 @@ bool decompress_gltf(const command_line_options& options)
 			printf("    Largest error of %.2f mm on transform %u ('%s') @ %.2f sec\n", bone_error.error * 100.0F * 100.0F, bone_error.index, worst_bone_name, bone_error.sample_time);
 		}
 
+		// Reset our buffer view
+		reset_buffer_view(model.bufferViews[acl_buffer_view_index]);
+		reset_buffer(model.buffers[acl_buffer_index]);
+
 		any_decompressed = true;
 	}
 
@@ -428,20 +431,6 @@ bool decompress_gltf(const command_line_options& options)
 	{
 		model.extensionsRequired.erase(std::find(model.extensionsRequired.begin(), model.extensionsRequired.end(), k_acl_gltf_extension_str));
 		model.extensionsUsed.erase(std::find(model.extensionsUsed.begin(), model.extensionsUsed.end(), k_acl_gltf_extension_str));
-
-		// Clear any buffers the animation data used if we managed to decompress everything.
-		// This assumes that buffers referenced by compressed animation data contain only compressed animation data
-		// and that it is no longer needed once decompressed.
-		for (int buffer_index : animation_buffers)
-		{
-			model.buffers[buffer_index] = tinygltf::Buffer();
-
-			// HACK BEGIN
-			// Due to a bug in tinygltf, buffers with 0 length perform an invalid access
-			// Set them to 1 byte
-			model.buffers[buffer_index].data.resize(1);
-			// HACK END
-		}
 
 		// We cannot remove the stale buffer and buffer view entries because we cannot safely remap old indices.
 		// An extension we don't know about might have its own buffer view and reference it in a way that
