@@ -85,7 +85,6 @@ static bool validate_input(const tinygltf::Model& model)
 	return true;
 }
 
-
 bool compress_gltf(const command_line_options& options)
 {
 	if (options.input_filename0 == options.output_filename)
