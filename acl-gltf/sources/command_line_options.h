@@ -30,6 +30,8 @@ enum class command_line_action
 {
 	none,
 	compress,
+	decompress,
+	//diff,
 };
 
 struct command_line_options

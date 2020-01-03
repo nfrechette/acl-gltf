@@ -35,7 +35,7 @@ command_line_options::command_line_options()
 static void print_usage()
 {
 	printf("Usage: acl-gltf --compress <input_file> [<output_file>]\n");
-	printf("Usage: acl-gltf --decompress <input_file> <output_file>\n");
+	printf("Usage: acl-gltf --decompress <input_file> [<output_file>]\n");
 	printf("Usage: acl-gltf --diff <input_file1> <input_file2>\n");
 }
 
@@ -72,6 +72,35 @@ bool parse_command_line_arguments(int argc, char* argv[], command_line_options& 
 			arg_index++;
 
 			options.action = command_line_action::compress;
+			options.input_filename0 = argv[arg_index];
+
+			// If we have no output file, we'll just end up printing the stats which is fine
+			if (arg_index + 1 < argc)
+			{
+				arg_index++;
+				options.output_filename = argv[arg_index];
+			}
+		}
+
+		if (is_str_equal(argument, "--decompress"))
+		{
+			if (options.action != command_line_action::none)
+			{
+				printf("Only one command can be provided\n");
+				print_usage();
+				return false;
+			}
+
+			if (arg_index + 1 == argc)
+			{
+				printf("--decompress requires an input glTF/glB file\n");
+				print_usage();
+				return false;
+			}
+
+			arg_index++;
+
+			options.action = command_line_action::decompress;
 			options.input_filename0 = argv[arg_index];
 
 			// If we have no output file, we'll just end up printing the stats which is fine
