@@ -81,8 +81,7 @@ bool parse_command_line_arguments(int argc, char* argv[], command_line_options& 
 				options.output_filename = argv[arg_index];
 			}
 		}
-
-		if (is_str_equal(argument, "--decompress"))
+		else if (is_str_equal(argument, "--decompress"))
 		{
 			if (options.action != command_line_action::none)
 			{
