@@ -204,7 +204,7 @@ bool decompress_gltf(const command_line_options& options)
 
 	if (!success)
 	{
-		printf("Failed to parse input glTF\n");
+		printf("Failed to parse glTF input: %s\n", options.input_filename0.c_str());
 		return false;
 	}
 
