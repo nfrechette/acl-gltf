@@ -57,7 +57,7 @@ bool parse_command_line_arguments(int argc, char* argv[], command_line_options& 
 		{
 			if (options.action != command_line_action::none)
 			{
-				printf("Only one command can be provided\n");
+				printf("Only one action can be provided\n");
 				print_usage();
 				return false;
 			}
@@ -86,7 +86,7 @@ bool parse_command_line_arguments(int argc, char* argv[], command_line_options& 
 		{
 			if (options.action != command_line_action::none)
 			{
-				printf("Only one command can be provided\n");
+				printf("Only one action can be provided\n");
 				print_usage();
 				return false;
 			}
