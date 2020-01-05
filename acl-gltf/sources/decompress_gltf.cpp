@@ -84,39 +84,6 @@ static bool validate_input(const tinygltf::Model& model)
 	return true;
 }
 
-static bool is_animation_compressed_with_acl(const tinygltf::Model& model, const tinygltf::Animation& animation, int& out_acl_buffer_view_index)
-{
-	out_acl_buffer_view_index = -1;
-
-	if (animation.channels.empty())
-		return false;	// No animation data
-
-	for (const tinygltf::AnimationChannel& channel : animation.channels)
-	{
-		const tinygltf::AnimationSampler& sampler = animation.samplers[channel.sampler];
-		const tinygltf::Accessor& sample_time_accessor = model.accessors[sampler.input];
-		const tinygltf::Accessor& sample_value_accessor = model.accessors[sampler.output];
-
-		if (sample_time_accessor.bufferView != sample_value_accessor.bufferView)
-			return false;	// ACL requires a single buffer
-
-		if (sample_time_accessor.byteOffset != 0 || sample_value_accessor.byteOffset != 0)
-			return false;	// ACL requires a single buffer with no offset
-
-		if (sample_time_accessor.componentType != TINYGLTF_COMPONENT_TYPE_BYTE || sample_value_accessor.componentType != TINYGLTF_COMPONENT_TYPE_BYTE)
-			return false;	// ACL requires a byte buffer
-
-		if (sample_time_accessor.type != TINYGLTF_TYPE_SCALAR || sample_value_accessor.type != TINYGLTF_TYPE_SCALAR)
-			return false;	// ACL requires a scalar byte buffer
-	}
-
-	const tinygltf::AnimationSampler& sampler = animation.samplers[animation.channels[0].sampler];
-	const tinygltf::Accessor& accessor = model.accessors[sampler.input];
-	out_acl_buffer_view_index = accessor.bufferView;
-
-	return true;
-}
-
 static void setup_channel(tinygltf::Animation& animation, const char* target_path, int transform_index, int channel_index)
 {
 	tinygltf::AnimationChannel& channel = animation.channels[channel_index];
