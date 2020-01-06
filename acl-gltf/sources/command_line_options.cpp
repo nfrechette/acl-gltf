@@ -29,6 +29,7 @@
 command_line_options::command_line_options()
 	: action(command_line_action::none)
 	, input_filename0()
+	, input_filename1()
 	, output_filename()
 {}
 
@@ -108,6 +109,30 @@ bool parse_command_line_arguments(int argc, char* argv[], command_line_options& 
 				arg_index++;
 				options.output_filename = argv[arg_index];
 			}
+		}
+		else if (is_str_equal(argument, "--diff"))
+		{
+			if (options.action != command_line_action::none)
+			{
+				printf("Only one action can be provided\n");
+				print_usage();
+				return false;
+			}
+
+			if (arg_index + 3 != argc)
+			{
+				printf("--diff requires two input glTF/glB files\n");
+				print_usage();
+				return false;
+			}
+
+			arg_index++;
+
+			options.action = command_line_action::diff;
+			options.input_filename0 = argv[arg_index];
+
+			arg_index++;
+			options.input_filename1 = argv[arg_index];
 		}
 
 		// Unknown arguments are ignored silently

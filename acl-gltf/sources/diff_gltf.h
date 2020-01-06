@@ -3,7 +3,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 // The MIT License (MIT)
 //
-// Copyright (c) 2019 Nicholas Frechette
+// Copyright (c) 2020 Nicholas Frechette
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,25 +24,4 @@
 // SOFTWARE.
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <string>
-
-enum class command_line_action
-{
-	none,
-	compress,
-	decompress,
-	diff,
-};
-
-struct command_line_options
-{
-	command_line_action		action;
-
-	std::string				input_filename0;
-	std::string				input_filename1;
-	std::string				output_filename;
-
-	command_line_options();
-};
-
-bool parse_command_line_arguments(int argc, char* argv[], command_line_options& out_options);
+bool diff_gltf(const struct command_line_options& options);
