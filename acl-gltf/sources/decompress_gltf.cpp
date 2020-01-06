@@ -38,6 +38,7 @@
 #include <acl/core/utils.h>
 
 #include <rtm/scalarf.h>
+#include <rtm/vector4f.h>
 
 #include <cmath>
 #include <limits>
@@ -103,8 +104,8 @@ static void setup_sampler(tinygltf::Model& model, tinygltf::AnimationSampler& sa
 	sample_time_accessor.byteOffset = 0;
 	sample_time_accessor.componentType = TINYGLTF_COMPONENT_TYPE_FLOAT;
 	sample_time_accessor.count = num_samples;
-	//sample_time_accessor.maxValues = ??
-	//sample_time_accessor.minValues = ??
+	//sample_time_accessor.maxValues = ... this is set later
+	//sample_time_accessor.minValues = ... this is set later
 	sample_time_accessor.name = "";
 	sample_time_accessor.normalized = false;
 	sample_time_accessor.type = TINYGLTF_TYPE_SCALAR;
@@ -115,8 +116,8 @@ static void setup_sampler(tinygltf::Model& model, tinygltf::AnimationSampler& sa
 	sample_value_accessor.byteOffset = 0;
 	sample_value_accessor.componentType = TINYGLTF_COMPONENT_TYPE_FLOAT;
 	sample_value_accessor.count = num_samples;
-	//sample_value_accessor.maxValues = ??
-	//sample_value_accessor.minValues = ??
+	//sample_value_accessor.maxValues = ... this is set later
+	//sample_value_accessor.minValues = ... this is set later
 	sample_value_accessor.name = "";
 	sample_value_accessor.normalized = false;
 	sample_value_accessor.type = sample_type;
@@ -178,6 +179,94 @@ static void RTM_SIMD_CALL write_vec3_sample(tinygltf::Model& model, const tinygl
 
 	acl::track_float3f sample_values = make_track_ref<acl::track_float3f>(model, sample_value_accessor);
 	rtm::vector_store3(sample_value, &sample_values[sample_index]);
+}
+
+static void update_accessor_min_max_vec4(tinygltf::Model& model, tinygltf::Accessor& accessor)
+{
+	ACL_ASSERT(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT, "Unexpected accessor component type");
+	ACL_ASSERT(accessor.type == TINYGLTF_TYPE_VEC4, "Unexpected accessor type");
+	ACL_ASSERT(!accessor.normalized, "Normalized sample value not supported");
+
+	const acl::track_float4f sample_values = make_track_ref<acl::track_float4f>(model, accessor);
+
+	rtm::vector4f min = rtm::vector_set(1.0E38F);
+	rtm::vector4f max = rtm::vector_set(-1.0E38F);
+
+	const uint32_t num_samples = sample_values.get_num_samples();
+	for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+	{
+		const rtm::vector4f sample_ = rtm::vector_load(&sample_values[sample_index]);
+		min = rtm::vector_min(min, sample_);
+		max = rtm::vector_max(max, sample_);
+	}
+
+	accessor.minValues.resize(4);
+	accessor.minValues[0] = rtm::vector_get_x(min);
+	accessor.minValues[1] = rtm::vector_get_y(min);
+	accessor.minValues[2] = rtm::vector_get_z(min);
+	accessor.minValues[3] = rtm::vector_get_w(min);
+
+	accessor.maxValues.resize(4);
+	accessor.maxValues[0] = rtm::vector_get_x(max);
+	accessor.maxValues[1] = rtm::vector_get_y(max);
+	accessor.maxValues[2] = rtm::vector_get_z(max);
+	accessor.maxValues[3] = rtm::vector_get_w(max);
+}
+
+static void update_accessor_min_max_vec3(tinygltf::Model& model, tinygltf::Accessor& accessor)
+{
+	ACL_ASSERT(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT, "Unexpected accessor component type");
+	ACL_ASSERT(accessor.type == TINYGLTF_TYPE_VEC3, "Unexpected accessor type");
+	ACL_ASSERT(!accessor.normalized, "Normalized sample value not supported");
+
+	const acl::track_float3f sample_values = make_track_ref<acl::track_float3f>(model, accessor);
+
+	rtm::vector4f min = rtm::vector_set(1.0E38F);
+	rtm::vector4f max = rtm::vector_set(-1.0E38F);
+
+	const uint32_t num_samples = sample_values.get_num_samples();
+	for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+	{
+		const rtm::vector4f sample_ = rtm::vector_load3(&sample_values[sample_index]);
+		min = rtm::vector_min(min, sample_);
+		max = rtm::vector_max(max, sample_);
+	}
+
+	accessor.minValues.resize(3);
+	accessor.minValues[0] = rtm::vector_get_x(min);
+	accessor.minValues[1] = rtm::vector_get_y(min);
+	accessor.minValues[2] = rtm::vector_get_z(min);
+
+	accessor.maxValues.resize(3);
+	accessor.maxValues[0] = rtm::vector_get_x(max);
+	accessor.maxValues[1] = rtm::vector_get_y(max);
+	accessor.maxValues[2] = rtm::vector_get_z(max);
+}
+
+static void update_accessor_min_max_scalar(tinygltf::Model& model, tinygltf::Accessor& accessor)
+{
+	ACL_ASSERT(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT, "Unexpected accessor component type");
+	ACL_ASSERT(accessor.type == TINYGLTF_TYPE_SCALAR, "Unexpected accessor type");
+	ACL_ASSERT(!accessor.normalized, "Normalized sample value not supported");
+
+	const acl::track_float1f sample_values = make_track_ref<acl::track_float1f>(model, accessor);
+
+	rtm::scalarf min = rtm::scalar_set(1.0E38F);
+	rtm::scalarf max = rtm::scalar_set(-1.0E38F);
+
+	const uint32_t num_samples = sample_values.get_num_samples();
+	for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+	{
+		const rtm::scalarf sample_ = rtm::scalar_load(&sample_values[sample_index]);
+		min = rtm::scalar_min(min, sample_);
+		max = rtm::scalar_max(max, sample_);
+	}
+
+	accessor.minValues.resize(1);
+	accessor.minValues[0] = rtm::scalar_cast(min);
+
+	accessor.maxValues.resize(1);
+	accessor.maxValues[0] = rtm::scalar_cast(max);
 }
 
 bool decompress_gltf(const command_line_options& options)
@@ -361,6 +450,38 @@ bool decompress_gltf(const command_line_options& options)
 						tinygltf::AnimationSampler& scale_sampler = animation.samplers[(transform_index * num_channels_per_transform) + 2];
 						write_vec3_sample(model, scale_sampler, sample_index, lossy_local_transforms[transform_index].scale);
 					}
+				}
+			}
+
+			// Now that all the data has been written, update the min/max for each accessor
+			for (uint16_t transform_index = 0; transform_index < clip_header.num_bones; ++transform_index)
+			{
+				{
+					const tinygltf::AnimationSampler& rotation_sampler = animation.samplers[(transform_index * num_channels_per_transform) + 0];
+
+					tinygltf::Accessor& time_accessor = model.accessors[rotation_sampler.input];
+					update_accessor_min_max_scalar(model, time_accessor);
+					tinygltf::Accessor& rotation_accessor = model.accessors[rotation_sampler.output];
+					update_accessor_min_max_vec4(model, rotation_accessor);
+				}
+
+				{
+					const tinygltf::AnimationSampler& translation_sampler = animation.samplers[(transform_index * num_channels_per_transform) + 1];
+
+					tinygltf::Accessor& time_accessor = model.accessors[translation_sampler.input];
+					update_accessor_min_max_scalar(model, time_accessor);
+					tinygltf::Accessor& translation_accessor = model.accessors[translation_sampler.output];
+					update_accessor_min_max_vec3(model, translation_accessor);
+				}
+
+				if (clip_header.has_scale)
+				{
+					const tinygltf::AnimationSampler& scale_sampler = animation.samplers[(transform_index * num_channels_per_transform) + 2];
+
+					tinygltf::Accessor& time_accessor = model.accessors[scale_sampler.input];
+					update_accessor_min_max_scalar(model, time_accessor);
+					tinygltf::Accessor& scale_accessor = model.accessors[scale_sampler.output];
+					update_accessor_min_max_vec3(model, scale_accessor);
 				}
 			}
 
