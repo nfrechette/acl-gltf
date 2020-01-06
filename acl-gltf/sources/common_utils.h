@@ -40,6 +40,7 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 
 uint32_t get_raw_animation_size(const tinygltf::Model& model, const tinygltf::Animation& animation);
 bool is_animation_compressed_with_acl(const tinygltf::Model& model, const tinygltf::Animation& animation, int& out_acl_buffer_view_index);
+bool is_binary_gltf_filename(const std::string& filename);
 
 void reset_buffer_view(tinygltf::BufferView& buffer_view);
 void reset_buffer(tinygltf::Buffer& buffer);
