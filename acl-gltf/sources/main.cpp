@@ -25,6 +25,7 @@
 #include "command_line_options.h"
 #include "compress_gltf.h"
 #include "decompress_gltf.h"
+#include "diff_gltf.h"
 
 #include <acl/core/error.h>
 #include <acl/core/floating_point_exceptions.h>
@@ -53,6 +54,9 @@ int main(int argc, char* argv[])
 		break;
 	case command_line_action::decompress:
 		exit_code = decompress_gltf(options) ? 0 : 1;
+		break;
+	case command_line_action::diff:
+		exit_code = diff_gltf(options) ? 0 : 1;
 		break;
 	}
 
