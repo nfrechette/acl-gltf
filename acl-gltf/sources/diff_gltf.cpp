@@ -95,7 +95,11 @@ bool diff_gltf(const command_line_options& options)
 	std::string err;
 	std::string warn;
 
-	bool success = loader0.LoadASCIIFromFile(&model0, &err, &warn, options.input_filename0);
+	bool success;
+	if (is_binary_gltf_filename(options.input_filename0))
+		success = loader0.LoadBinaryFromFile(&model0, &err, &warn, options.input_filename0);
+	else
+		success = loader0.LoadASCIIFromFile(&model0, &err, &warn, options.input_filename0);
 
 	if (!warn.empty())
 		printf("Warn: %s\n", warn.c_str());
@@ -112,7 +116,10 @@ bool diff_gltf(const command_line_options& options)
 	if (!validate_input(model0))
 		return false;
 
-	success = loader1.LoadASCIIFromFile(&model1, &err, &warn, options.input_filename1);
+	if (is_binary_gltf_filename(options.input_filename1))
+		success = loader1.LoadBinaryFromFile(&model1, &err, &warn, options.input_filename1);
+	else
+		success = loader1.LoadASCIIFromFile(&model1, &err, &warn, options.input_filename1);
 
 	if (!warn.empty())
 		printf("Warn: %s\n", warn.c_str());

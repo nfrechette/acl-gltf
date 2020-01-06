@@ -99,7 +99,11 @@ bool compress_gltf(const command_line_options& options)
 	std::string err;
 	std::string warn;
 
-	const bool success = loader.LoadASCIIFromFile(&model, &err, &warn, options.input_filename0);
+	bool success;
+	if (is_binary_gltf_filename(options.input_filename0))
+		success = loader.LoadBinaryFromFile(&model, &err, &warn, options.input_filename0);
+	else
+		success = loader.LoadASCIIFromFile(&model, &err, &warn, options.input_filename0);
 
 	if (!warn.empty())
 		printf("Warn: %s\n", warn.c_str());
@@ -240,12 +244,11 @@ bool compress_gltf(const command_line_options& options)
 		// If we have no output file, we'll just end up printing the stats which is fine
 		if (!options.output_filename.empty())
 		{
-			const size_t gltf_ext_start_pos = options.output_filename.rfind(".gltf");
-			const bool is_binary = gltf_ext_start_pos == std::string::npos;
+			const bool is_output_binary = is_binary_gltf_filename(options.output_filename);
 			const bool embed_images = true;
 			const bool embed_buffers = true;
 			const bool pretty_print = true;
-			const bool is_write_okay = loader.WriteGltfSceneToFile(&model, options.output_filename, embed_images, embed_buffers, pretty_print, is_binary);
+			const bool is_write_okay = loader.WriteGltfSceneToFile(&model, options.output_filename, embed_images, embed_buffers, pretty_print, is_output_binary);
 			if (!is_write_okay)
 			{
 				printf("Failed to write output glTF file: %s\n", options.output_filename.c_str());

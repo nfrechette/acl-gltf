@@ -436,6 +436,11 @@ bool is_animation_compressed_with_acl(const tinygltf::Model& model, const tinygl
 	return true;
 }
 
+bool is_binary_gltf_filename(const std::string& filename)
+{
+	return filename.rfind(".gltf") == std::string::npos;
+}
+
 void reset_buffer_view(tinygltf::BufferView& buffer_view)
 {
 	buffer_view.buffer = 0;		// Index must always be valid
