@@ -163,7 +163,7 @@ bool compress_gltf(const command_line_options& options)
 		// Measure the compression error
 		acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context;
 		context.initialize(*compressed_clip);
-		const acl::BoneError bone_error = calculate_compressed_clip_error(allocator, clip, error_metric, context);
+		const acl::BoneError bone_error = acl::calculate_error_between_clips(allocator, error_metric, clip, context);
 
 		printf("    Largest error of %.2f mm on transform %u ('%s') @ %.2f sec\n", bone_error.error * 100.0F * 100.0F, bone_error.index, skeleton.get_bone(bone_error.index).name.c_str(), bone_error.sample_time);
 
