@@ -12,6 +12,7 @@ def parse_argv():
 	actions = parser.add_argument_group(title='Actions', description='If no action is specified, on Windows, OS X, and Linux the solution/make files are generated.  Multiple actions can be used simultaneously.')
 	actions.add_argument('-build', action='store_true')
 	actions.add_argument('-clean', action='store_true')
+	actions.add_argument('-compress', nargs=2)
 
 	target = parser.add_argument_group(title='Target')
 	target.add_argument('-compiler', choices=['vs2015', 'vs2017', 'vs2019', 'clang4', 'clang5', 'clang6', 'clang7', 'clang8', 'clang9', 'gcc5', 'gcc6', 'gcc7', 'gcc8', 'gcc9', 'osx'], help='Defaults to the host system\'s default compiler')
@@ -191,6 +192,82 @@ def do_build(cmake_exe, args):
 	if result != 0:
 		sys.exit(result)
 
+def compress_file(acl_gltf_exe_path, input_filename, output_filename):
+	print('Compressing \'{}\' ...'.format(os.path.basename(input_filename)))
+	args = [acl_gltf_exe_path, '--compress', input_filename, output_filename]
+
+	try:
+		output = subprocess.check_output(args)
+		print(output.decode(sys.stdout.encoding))
+		return True
+	except subprocess.CalledProcessError as e:
+		print('Failed to compress glTF file: {}'.format(" ".join(args)))
+		print(e.output.decode(sys.stdout.encoding))
+		return False
+
+def do_compress(args):
+	# We are already located in the build directory
+	if platform.system() == 'Windows':
+		acl_gltf_exe_path = 'bin/acl-gltf.exe'
+	else:
+		acl_gltf_exe_path = 'bin/acl-gltf'
+
+	acl_gltf_exe_path = os.path.abspath(acl_gltf_exe_path)
+	if not os.path.exists(acl_gltf_exe_path):
+		print('acl-gltf executable not found: {}'.format(acl_gltf_exe_path))
+		sys.exit(1)
+
+	input_path = args.compress[0]
+	output_path = args.compress[1]
+
+	# Handle long paths on Windows
+	if platform.system() == 'Windows':
+		input_path = '\\\\?\\{}'.format(input_path)
+		output_path = '\\\\?\\{}'.format(output_path)
+
+	is_input_dir = os.path.isdir(input_path)
+	is_output_dir = os.path.isdir(output_path)
+	does_output_exist = os.path.exists(output_path)
+	if is_input_dir and (is_output_dir or not does_output_exist):
+		# Input and output are directories, we'll iterate over every input file and generate an output with the same name
+		print('')
+		print('Compressing \'{}\\*\' -> \'{}\\*\' ...'.format(args.compress[0], args.compress[1]))
+
+		if not does_output_exist:
+			os.makedirs(output_path)
+
+		# tinygltf attemps to load dependent binary/texture data from the current working directory
+		os.chdir(input_path)
+
+		success = True
+
+		for (dirpath, dirnames, filenames) in os.walk(input_path):
+			for filename in filenames:
+				if not filename.endswith('.gltf') and not filename.endswith('.glb'):
+					continue
+
+				input_filename = os.path.join(input_path, filename)
+				output_filename = os.path.join(output_path, filename)
+
+				if not compress_file(acl_gltf_exe_path, input_filename, output_filename):
+					success = False
+
+		if not success:
+			sys.exit(1)
+	elif not is_input_dir and (not is_output_dir or not does_output_exist):
+		# Input and output are files
+		print('')
+		print('Compressing \'{}\' -> \'{}\' ...'.format(args.compress[0], args.compress[1]))
+
+		# tinygltf attemps to load dependent binary/texture data from the current working directory
+		os.chdir(os.path.dirname(input_path))
+
+		if not compress_file(acl_gltf_exe_path, input_path, output_path):
+			sys.exit(1)
+	else:
+		print('Both input and output must either be files or directories, mixing not supported')
+		sys.exit(1)
+
 if __name__ == "__main__":
 	args = parse_argv()
 
@@ -228,5 +305,8 @@ if __name__ == "__main__":
 
 	if args.build:
 		do_build(cmake_exe, args)
+
+	if args.compress:
+		do_compress(args)
 
 	sys.exit(0)
