@@ -205,7 +205,7 @@ def compress_file(acl_gltf_exe_path, input_filename, output_filename):
 		print(e.output.decode(sys.stdout.encoding))
 		return False
 
-def do_compress(args):
+def do_action(args, action_fn, action_name, action_operator, path0, path1):
 	# We are already located in the build directory
 	if platform.system() == 'Windows':
 		acl_gltf_exe_path = 'bin/acl-gltf.exe'
@@ -217,8 +217,8 @@ def do_compress(args):
 		print('acl-gltf executable not found: {}'.format(acl_gltf_exe_path))
 		sys.exit(1)
 
-	input_path = args.compress[0]
-	output_path = args.compress[1]
+	input_path = path0
+	output_path = path1
 
 	if os.path.abspath(input_path) == os.path.abspath(output_path):
 		print('Input and output must be different')
@@ -235,7 +235,7 @@ def do_compress(args):
 	if is_input_dir and (is_output_dir or not does_output_exist):
 		# Input and output are directories, we'll iterate over every input file and generate an output with the same name
 		print('')
-		print('Compressing \'{}\\*\' -> \'{}\\*\' ...'.format(args.compress[0], args.compress[1]))
+		print('{} \'{}\\*\' {} \'{}\\*\' ...'.format(action_name, path0, action_operator, path1))
 
 		if not does_output_exist:
 			os.makedirs(output_path)
@@ -254,7 +254,7 @@ def do_compress(args):
 				input_filename = os.path.join(input_path, filename)
 				output_filename = os.path.join(output_path, filename)
 
-				if not compress_file(acl_gltf_exe_path, input_filename, output_filename):
+				if not action_fn(acl_gltf_exe_path, input_filename, output_filename):
 					success = False
 
 		os.chdir(old_cwd)
@@ -264,13 +264,13 @@ def do_compress(args):
 	elif not is_input_dir and (not is_output_dir or not does_output_exist):
 		# Input and output are files
 		print('')
-		print('Compressing \'{}\' -> \'{}\' ...'.format(args.compress[0], args.compress[1]))
+		print('{} \'{}\' {} \'{}\' ...'.format(action_name, path0, action_operator, path1))
 
 		# tinygltf attemps to load dependent binary/texture data from the current working directory
 		old_cwd = os.getcwd()
 		os.chdir(os.path.dirname(input_path))
 
-		success = compress_file(acl_gltf_exe_path, input_path, output_path)
+		success = action_fn(acl_gltf_exe_path, input_path, output_path)
 
 		os.chdir(old_cwd)
 
@@ -279,6 +279,9 @@ def do_compress(args):
 	else:
 		print('Both input and output must either be files or directories, mixing not supported')
 		sys.exit(1)
+
+def do_compress(args):
+	do_action(args, compress_file, 'Compressing', '->', args.compress[0], args.compress[1])
 
 if __name__ == "__main__":
 	args = parse_argv()
