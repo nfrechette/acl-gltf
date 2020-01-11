@@ -220,6 +220,10 @@ def do_compress(args):
 	input_path = args.compress[0]
 	output_path = args.compress[1]
 
+	if os.path.abspath(input_path) == os.path.abspath(output_path):
+		print('Input and output must be different')
+		sys.exit(1)
+
 	# Handle long paths on Windows
 	if platform.system() == 'Windows':
 		input_path = '\\\\?\\{}'.format(input_path)
