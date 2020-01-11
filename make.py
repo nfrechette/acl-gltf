@@ -14,6 +14,7 @@ def parse_argv():
 	actions.add_argument('-clean', action='store_true')
 	actions.add_argument('-compress', nargs=2)
 	actions.add_argument('-decompress', nargs=2)
+	actions.add_argument('-diff', nargs=2)
 
 	target = parser.add_argument_group(title='Target')
 	target.add_argument('-compiler', choices=['vs2015', 'vs2017', 'vs2019', 'clang4', 'clang5', 'clang6', 'clang7', 'clang8', 'clang9', 'gcc5', 'gcc6', 'gcc7', 'gcc8', 'gcc9', 'osx'], help='Defaults to the host system\'s default compiler')
@@ -219,6 +220,19 @@ def decompress_file(acl_gltf_exe_path, input_filename, output_filename):
 		print(e.output.decode(sys.stdout.encoding))
 		return False
 
+def diff_files(acl_gltf_exe_path, input_filename0, input_filename1):
+	print('Diffing \'{}\' and \'{}\' ...'.format(os.path.basename(input_filename0), os.path.basename(input_filename1)))
+	args = [acl_gltf_exe_path, '--diff', input_filename0, input_filename1]
+
+	try:
+		output = subprocess.check_output(args)
+		print(output.decode(sys.stdout.encoding))
+		return True
+	except subprocess.CalledProcessError as e:
+		print('Failed to diff glTF files: {}'.format(" ".join(args)))
+		print(e.output.decode(sys.stdout.encoding))
+		return False
+
 def do_action(args, action_fn, action_name, action_operator, path0, path1):
 	# We are already located in the build directory
 	if platform.system() == 'Windows':
@@ -300,6 +314,9 @@ def do_compress(args):
 def do_decompress(args):
 	do_action(args, decompress_file, 'Decompressing', '->', args.decompress[0], args.decompress[1])
 
+def do_diff(args):
+	do_action(args, diff_files, 'Diffing', 'and', args.diff[0], args.diff[1])
+
 if __name__ == "__main__":
 	args = parse_argv()
 
@@ -342,5 +359,7 @@ if __name__ == "__main__":
 		do_compress(args)
 	elif args.decompress:
 		do_decompress(args)
+	elif args.diff:
+		do_diff(args)
 
 	sys.exit(0)
