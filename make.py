@@ -241,6 +241,7 @@ def do_compress(args):
 			os.makedirs(output_path)
 
 		# tinygltf attemps to load dependent binary/texture data from the current working directory
+		old_cwd = os.getcwd()
 		os.chdir(input_path)
 
 		success = True
@@ -256,6 +257,8 @@ def do_compress(args):
 				if not compress_file(acl_gltf_exe_path, input_filename, output_filename):
 					success = False
 
+		os.chdir(old_cwd)
+
 		if not success:
 			sys.exit(1)
 	elif not is_input_dir and (not is_output_dir or not does_output_exist):
@@ -264,9 +267,14 @@ def do_compress(args):
 		print('Compressing \'{}\' -> \'{}\' ...'.format(args.compress[0], args.compress[1]))
 
 		# tinygltf attemps to load dependent binary/texture data from the current working directory
+		old_cwd = os.getcwd()
 		os.chdir(os.path.dirname(input_path))
 
-		if not compress_file(acl_gltf_exe_path, input_path, output_path):
+		success = compress_file(acl_gltf_exe_path, input_path, output_path)
+
+		os.chdir(old_cwd)
+
+		if not success:
 			sys.exit(1)
 	else:
 		print('Both input and output must either be files or directories, mixing not supported')
