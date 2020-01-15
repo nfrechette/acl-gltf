@@ -63,12 +63,6 @@ static bool validate_input(const tinygltf::Model& model)
 		return false;
 	}
 
-	if (model.animations.empty())
-	{
-		printf("glTF input does not contain any animations, nothing to diff\n");
-		return false;
-	}
-
 	if (model.animations.size() >= std::numeric_limits<uint16_t>::max())
 	{
 		printf("glTF input contains more animations than ACL can handle\n");
@@ -141,6 +135,12 @@ bool diff_gltf(const command_line_options& options)
 	{
 		printf("Inputs do not have the same number of animations, cannot diff\n");
 		return false;
+	}
+
+	if (model0.animations.empty())
+	{
+		printf("glTF inputs do not contain any animations, nothing to diff\n");
+		return true;
 	}
 
 	acl::ANSIAllocator allocator;

@@ -64,12 +64,6 @@ static bool validate_input(const tinygltf::Model& model)
 		return false;
 	}
 
-	if (model.animations.empty())
-	{
-		printf("glTF input does not contain any animations, nothing to compress\n");
-		return false;
-	}
-
 	if (model.animations.size() >= std::numeric_limits<uint16_t>::max())
 	{
 		printf("glTF input contains more animations than ACL can handle\n");
@@ -119,6 +113,12 @@ bool compress_gltf(const command_line_options& options)
 
 	if (!validate_input(model))
 		return false;
+
+	if (model.animations.empty())
+	{
+		printf("glTF input does not contain any animations, nothing to compress\n");
+		return true;
+	}
 
 	bool any_failed = false;
 	bool any_compressed = false;
