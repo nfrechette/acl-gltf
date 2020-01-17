@@ -63,7 +63,7 @@ acl::RigidSkeleton build_skeleton(const tinygltf::Model& model, const std::vecto
 		if (node.matrix.empty())
 		{
 			if (!node.rotation.empty())
-				bone.bind_transform.rotation = rtm::quat_load(node.rotation.data());
+				bone.bind_transform.rotation = rtm::quat_normalize(rtm::quat_load(node.rotation.data()));
 
 			if (!node.translation.empty())
 				bone.bind_transform.translation = rtm::vector_load3(node.translation.data());
@@ -300,8 +300,8 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 					float interpolation_alpha = 0.0F;
 					find_linear_interpolation_values(sample_times, sample_time, gltf_sample0, gltf_sample1, interpolation_alpha);
 
-					const rtm::quatf sample0 = rtm::vector_to_quat(rtm::vector_load(&sample_values[gltf_sample0]));
-					const rtm::quatf sample1 = rtm::vector_to_quat(rtm::vector_load(&sample_values[gltf_sample1]));
+					const rtm::quatf sample0 = rtm::quat_normalize(rtm::vector_to_quat(rtm::vector_load(&sample_values[gltf_sample0])));
+					const rtm::quatf sample1 = rtm::quat_normalize(rtm::vector_to_quat(rtm::vector_load(&sample_values[gltf_sample1])));
 					const rtm::quatf sample = rtm::quat_lerp(sample0, sample1, interpolation_alpha);
 
 					bone.rotation_track.set_sample(sample_index, rtm::quat_cast(sample));
