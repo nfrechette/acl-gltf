@@ -126,14 +126,14 @@ bool compress_gltf(const command_line_options& options)
 
 	acl::ANSIAllocator allocator;
 
-	const std::vector<uint16_t> node_parent_indices = build_node_parent_indices(model);
-	const acl::RigidSkeleton skeleton = build_skeleton(model, node_parent_indices, allocator);
+	const hierarchy_description hierarchy = build_hierarchy(model);
+	const acl::RigidSkeleton skeleton = build_skeleton(model, hierarchy, allocator);
 
 	for (tinygltf::Animation& animation : model.animations)
 	{
 		printf("Processing animation '%s' ...\n", animation.name.empty() ? "<unnamed>" : animation.name.c_str());
 
-		const acl::AnimationClip clip = build_clip(model, animation, skeleton, allocator);
+		const acl::AnimationClip clip = build_clip(model, animation, hierarchy, skeleton, allocator);
 
 		printf("    %.4f seconds (%u samples @ %.2f FPS)\n", clip.get_duration(), clip.get_num_samples(), clip.get_sample_rate());
 

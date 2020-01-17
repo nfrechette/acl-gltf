@@ -309,8 +309,8 @@ bool decompress_gltf(const command_line_options& options)
 
 	acl::ANSIAllocator allocator;
 
-	const std::vector<uint16_t> node_parent_indices = build_node_parent_indices(model);
-	const acl::RigidSkeleton skeleton = build_skeleton(model, node_parent_indices, allocator);
+	const hierarchy_description hierarchy = build_hierarchy(model);
+	const acl::RigidSkeleton skeleton = build_skeleton(model, hierarchy, allocator);
 
 	for (tinygltf::Animation& animation : model.animations)
 	{
@@ -497,7 +497,7 @@ bool decompress_gltf(const command_line_options& options)
 			const tinygltf::Buffer& acl_buffer = model.buffers[acl_buffer_index];
 			const acl::CompressedClip* compressed_clip = reinterpret_cast<const acl::CompressedClip*>(acl_buffer.data.data());
 
-			const acl::AnimationClip clip = build_clip(model, animation, skeleton, allocator);
+			const acl::AnimationClip clip = build_clip(model, animation, hierarchy, skeleton, allocator);
 
 			acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context;
 			context.initialize(*compressed_clip);

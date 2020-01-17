@@ -24,38 +24,126 @@
 
 #include "common_utils.h"
 
+#include <queue>
+#include <vector>
+
 std::vector<uint16_t> build_node_parent_indices(const tinygltf::Model& model)
 {
-	const size_t num_transforms = model.nodes.size();
+	const uint16_t num_transforms = static_cast<uint16_t>(model.nodes.size());
 
 	std::vector<uint16_t> node_parent_indices;
 	node_parent_indices.resize(num_transforms, acl::k_invalid_bone_index);
 
-	for (size_t transform_index = 0; transform_index < num_transforms; ++transform_index)
+	for (uint16_t node_index = 0; node_index < num_transforms; ++node_index)
 	{
-		const tinygltf::Node& node = model.nodes[transform_index];
+		const tinygltf::Node& node = model.nodes[node_index];
 
-		for (int child_index : node.children)
-			node_parent_indices[child_index] = static_cast<uint16_t>(transform_index);
+		for (int child_node_index : node.children)
+			node_parent_indices[child_node_index] = node_index;
 	}
 
 	return node_parent_indices;
 }
 
-acl::RigidSkeleton build_skeleton(const tinygltf::Model& model, const std::vector<uint16_t>& node_parent_indices, acl::IAllocator& allocator)
+std::vector<uint16_t> build_transform_to_node_mapping(const tinygltf::Model& model, const std::vector<uint16_t>& node_parent_indices)
 {
+	// The nodes in a glTF scene might not be sorted parent first and as such we must sort them for ACL.
+	// When we read in our data, we'll read it in sorted bone order and when we decompress with ACL,
+	// we'll do so in glTF node order (with the output index on the AnimationClip).
+
 	const uint16_t num_transforms = static_cast<uint16_t>(model.nodes.size());
+
+	std::vector<uint16_t> transform_to_node_mapping;
+	std::queue<uint16_t> nodes_to_process;
+
+	// Start off with the indices of each root node
+	for (uint16_t node_index = 0; node_index < num_transforms; ++node_index)
+	{
+		if (node_parent_indices[node_index] == acl::k_invalid_bone_index)
+			nodes_to_process.push(node_index);
+	}
+
+	while (!nodes_to_process.empty())
+	{
+		const uint16_t node_index = nodes_to_process.front();
+		nodes_to_process.pop();
+
+		// Add the node to our mapping, its children will follow
+		transform_to_node_mapping.push_back(node_index);
+
+		// Queue up the children for processing
+		const tinygltf::Node& node = model.nodes[node_index];
+		for (int child_node_index : node.children)
+			nodes_to_process.push(static_cast<uint16_t>(child_node_index));
+	}
+
+	return transform_to_node_mapping;
+}
+
+std::vector<uint16_t> build_node_to_transform_mapping(const std::vector<uint16_t>& transform_to_node_mapping)
+{
+	const uint16_t num_transforms = static_cast<uint16_t>(transform_to_node_mapping.size());
+
+	std::vector<uint16_t> node_to_transform_mapping;
+	node_to_transform_mapping.resize(num_transforms);
+
+	for (uint16_t transform_index = 0; transform_index < num_transforms; ++transform_index)
+		node_to_transform_mapping[transform_to_node_mapping[transform_index]] = transform_index;
+
+	return node_to_transform_mapping;
+}
+
+std::vector<uint16_t> build_transform_parent_indices(const std::vector<uint16_t> node_to_transform_mapping, const std::vector<uint16_t>& node_parent_indices, const std::vector<uint16_t> transform_to_node_mapping)
+{
+	const uint16_t num_transforms = static_cast<uint16_t>(node_to_transform_mapping.size());
+
+	std::vector<uint16_t> transform_parent_indices;
+	transform_parent_indices.resize(num_transforms);
+
+	for (uint16_t transform_index = 0; transform_index < num_transforms; ++transform_index)
+	{
+		const uint16_t parent_node_index = node_parent_indices[transform_to_node_mapping[transform_index]];
+		if (parent_node_index == acl::k_invalid_bone_index)
+			transform_parent_indices[transform_index] = parent_node_index;
+		else
+			transform_parent_indices[transform_index] = node_to_transform_mapping[parent_node_index];
+	}
+
+	return transform_parent_indices;
+}
+
+hierarchy_description build_hierarchy(const tinygltf::Model& model)
+{
+	const std::vector<uint16_t> node_parent_indices = build_node_parent_indices(model);
+	const std::vector<uint16_t> transform_to_node_mapping = build_transform_to_node_mapping(model, node_parent_indices);
+	const std::vector<uint16_t> node_to_transform_mapping = build_node_to_transform_mapping(transform_to_node_mapping);
+	const std::vector<uint16_t> transform_parent_indices = build_transform_parent_indices(node_to_transform_mapping, node_parent_indices, transform_to_node_mapping);
+
+	hierarchy_description desc;
+	desc.node_parent_indices = std::move(node_parent_indices);
+	desc.transform_parent_indices = std::move(transform_parent_indices);
+	desc.node_to_transform_mapping = std::move(node_to_transform_mapping);
+	desc.transform_to_node_mapping = std::move(transform_to_node_mapping);
+	desc.num_transforms = static_cast<uint16_t>(model.nodes.size());
+	return desc;
+}
+
+acl::RigidSkeleton build_skeleton(const tinygltf::Model& model, const hierarchy_description& hierarchy, acl::IAllocator& allocator)
+{
+	const uint16_t num_transforms = hierarchy.num_transforms;
 
 	std::vector<acl::RigidBone> bones;
 	bones.resize(num_transforms);
 
 	for (uint16_t transform_index = 0; transform_index < num_transforms; ++transform_index)
 	{
-		const tinygltf::Node& node = model.nodes[transform_index];
+		const uint16_t node_index = hierarchy.transform_to_node_mapping[transform_index];
+
+		const tinygltf::Node& node = model.nodes[node_index];
 		acl::RigidBone& bone = bones[transform_index];
 
 		bone.name = acl::String(allocator, node.name.c_str());
-		bone.parent_index = node_parent_indices[transform_index];
+		bone.parent_index = hierarchy.transform_parent_indices[transform_index];
 
 		// glTF units are in meters
 		bone.vertex_distance = 1.0F;		// TODO: Use skinning information and mesh?
@@ -241,7 +329,7 @@ static void find_linear_interpolation_values(const acl::track_float1f& sample_ti
 	out_interpolation_alpha = rtm::scalar_clamp((sample_time - gltf_sample_time0) / (gltf_sample_time1 - gltf_sample_time0), 0.0F, 1.0F);
 }
 
-acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Animation& animation, const acl::RigidSkeleton& skeleton, acl::IAllocator& allocator)
+acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Animation& animation, const hierarchy_description& hierarchy, const acl::RigidSkeleton& skeleton, acl::IAllocator& allocator)
 {
 	const float duration = find_clip_duration(model, animation);
 	const float sample_rate = find_clip_sample_rate(model, animation, duration);
@@ -249,12 +337,13 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 
 	acl::AnimationClip clip(allocator, skeleton, num_samples, sample_rate, acl::String(allocator, animation.name.c_str()));
 
-	// Populate everything with the bind pose
+	// Populate everything with the bind pose and set our output indices in glTF node order
 	const uint16_t num_bones = skeleton.get_num_bones();
 	for (uint16_t bone_index = 0; bone_index < num_bones; ++bone_index)
 	{
 		const rtm::qvvd& bind_transform = skeleton.get_bone(bone_index).bind_transform;
 		acl::AnimatedBone& bone = clip.get_animated_bone(bone_index);
+		bone.output_index = hierarchy.transform_to_node_mapping[bone_index];
 
 		for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
 		{
@@ -267,7 +356,8 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 	// Sample the glTF animation and populate our data
 	for (const tinygltf::AnimationChannel& channel : animation.channels)
 	{
-		const uint16_t bone_index = static_cast<uint16_t>(channel.target_node);
+		const uint16_t node_index = static_cast<uint16_t>(channel.target_node);
+		const uint16_t bone_index = hierarchy.node_to_transform_mapping[node_index];
 		acl::AnimatedBone& bone = clip.get_animated_bone(bone_index);
 
 		const tinygltf::AnimationSampler& sampler = animation.samplers[channel.sampler];

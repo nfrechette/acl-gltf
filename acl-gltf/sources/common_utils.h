@@ -33,10 +33,20 @@
 
 #include <vector>
 
-std::vector<uint16_t> build_node_parent_indices(const tinygltf::Model& model);
+struct hierarchy_description
+{
+	std::vector<uint16_t> node_parent_indices;
+	std::vector<uint16_t> transform_parent_indices;
 
-acl::RigidSkeleton build_skeleton(const tinygltf::Model& model, const std::vector<uint16_t>& node_parent_indices, acl::IAllocator& allocator);
-acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Animation& animation, const acl::RigidSkeleton& skeleton, acl::IAllocator& allocator);
+	std::vector<uint16_t> node_to_transform_mapping;
+	std::vector<uint16_t> transform_to_node_mapping;
+
+	uint16_t num_transforms;
+};
+
+hierarchy_description build_hierarchy(const tinygltf::Model& model);
+acl::RigidSkeleton build_skeleton(const tinygltf::Model& model, const hierarchy_description& hierarchy, acl::IAllocator& allocator);
+acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Animation& animation, const hierarchy_description& hierarchy, const acl::RigidSkeleton& skeleton, acl::IAllocator& allocator);
 
 uint32_t get_raw_animation_size(const tinygltf::Model& model, const tinygltf::Animation& animation);
 bool is_animation_compressed_with_acl(const tinygltf::Model& model, const tinygltf::Animation& animation, int& out_acl_buffer_view_index);
