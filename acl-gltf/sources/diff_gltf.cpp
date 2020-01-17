@@ -161,8 +161,8 @@ bool diff_gltf(const command_line_options& options)
 		printf("Processing animation '%s' ...\n", animation0.name.empty() ? "<unnamed>" : animation0.name.c_str());
 
 		// Load up our skeleton, they should be identical, pick one
-		const std::vector<uint16_t> node_parent_indices0 = build_node_parent_indices(model0);
-		const acl::RigidSkeleton skeleton0 = build_skeleton(model0, node_parent_indices0, allocator);
+		const hierarchy_description hierarchy0 = build_hierarchy(model0);
+		const acl::RigidSkeleton skeleton0 = build_skeleton(model0, hierarchy0, allocator);
 
 		// Load our clips into ACL structures
 		const acl::AnimationClip* clip0 = nullptr;
@@ -188,7 +188,7 @@ bool diff_gltf(const command_line_options& options)
 		}
 		else
 		{
-			clip0 = new acl::AnimationClip(build_clip(model0, animation0, skeleton0, allocator));
+			clip0 = new acl::AnimationClip(build_clip(model0, animation0, hierarchy0, skeleton0, allocator));
 		}
 
 		int acl_buffer_view_index1 = -1;
@@ -209,7 +209,7 @@ bool diff_gltf(const command_line_options& options)
 		}
 		else
 		{
-			clip1 = new acl::AnimationClip(build_clip(model1, animation1, skeleton0, allocator));
+			clip1 = new acl::AnimationClip(build_clip(model1, animation1, hierarchy0, skeleton0, allocator));
 		}
 
 		// Calculate the error between the two clips
