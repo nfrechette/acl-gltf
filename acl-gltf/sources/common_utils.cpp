@@ -460,6 +460,10 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 				ACL_ASSERT(false, "Interpolation mode not supported");
 			}
 		}
+		else
+		{
+			ACL_ASSERT(false, "Channel target not supported: %s", channel.target_path.c_str());
+		}
 	}
 
 	return clip;
