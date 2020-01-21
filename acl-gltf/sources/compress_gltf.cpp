@@ -192,37 +192,40 @@ bool compress_gltf(const command_line_options& options)
 
 		model.bufferViews.push_back(std::move(compressed_buffer_view));
 
-		// Mark our old buffer views for removal and update to new buffer view
-		for (tinygltf::AnimationChannel& channel : animation.channels)
-		{
-			tinygltf::AnimationSampler& sampler = animation.samplers[channel.sampler];
-			tinygltf::Accessor& sample_time_accessor = model.accessors[sampler.input];
-			tinygltf::Accessor& sample_value_accessor = model.accessors[sampler.output];
-
-			// Add the buffers we use so we can clear them later
-			animation_buffers.push_back(model.bufferViews[sample_time_accessor.bufferView].buffer);
-			animation_buffers.push_back(model.bufferViews[sample_value_accessor.bufferView].buffer);
-
-			// Clear our old buffer views
-			reset_buffer_view(model.bufferViews[sample_time_accessor.bufferView]);
-			reset_buffer_view(model.bufferViews[sample_value_accessor.bufferView]);
-
-			// Set our new buffer view and related settings
-			sample_time_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
-			sample_value_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
-			sample_time_accessor.byteOffset = 0;
-			sample_value_accessor.byteOffset = 0;
-			sample_time_accessor.componentType = TINYGLTF_COMPONENT_TYPE_BYTE;
-			sample_value_accessor.componentType = TINYGLTF_COMPONENT_TYPE_BYTE;
-			sample_time_accessor.type = TINYGLTF_TYPE_SCALAR;
-			sample_value_accessor.type = TINYGLTF_TYPE_SCALAR;
-		}
-
 		any_compressed = true;
 	}
 
 	if (any_compressed)
 	{
+		// Mark our old buffer views for removal and update to new buffer view
+		for (tinygltf::Animation& animation : model.animations)
+		{
+			for (tinygltf::AnimationChannel& channel : animation.channels)
+			{
+				tinygltf::AnimationSampler& sampler = animation.samplers[channel.sampler];
+				tinygltf::Accessor& sample_time_accessor = model.accessors[sampler.input];
+				tinygltf::Accessor& sample_value_accessor = model.accessors[sampler.output];
+
+				// Add the buffers we use so we can clear them later
+				animation_buffers.push_back(model.bufferViews[sample_time_accessor.bufferView].buffer);
+				animation_buffers.push_back(model.bufferViews[sample_value_accessor.bufferView].buffer);
+
+				// Clear our old buffer views
+				reset_buffer_view(model.bufferViews[sample_time_accessor.bufferView]);
+				reset_buffer_view(model.bufferViews[sample_value_accessor.bufferView]);
+
+				// Set our new buffer view and related settings
+				sample_time_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
+				sample_value_accessor.bufferView = static_cast<int>(model.bufferViews.size() - 1);
+				sample_time_accessor.byteOffset = 0;
+				sample_value_accessor.byteOffset = 0;
+				sample_time_accessor.componentType = TINYGLTF_COMPONENT_TYPE_BYTE;
+				sample_value_accessor.componentType = TINYGLTF_COMPONENT_TYPE_BYTE;
+				sample_time_accessor.type = TINYGLTF_TYPE_SCALAR;
+				sample_value_accessor.type = TINYGLTF_TYPE_SCALAR;
+			}
+		}
+
 		model.extensionsRequired.push_back(k_acl_gltf_extension_str);
 		model.extensionsUsed.push_back(k_acl_gltf_extension_str);
 
