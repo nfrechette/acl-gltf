@@ -284,7 +284,8 @@ static float find_clip_sample_rate(const tinygltf::Model& model, const tinygltf:
 	return static_cast<float>(num_samples - 1) / duration;
 }
 
-static void find_linear_interpolation_values(const acl::track_float1f& sample_times, float sample_time, uint32_t& out_sample_index0, uint32_t& out_sample_index1, float& out_interpolation_alpha)
+// Scan the sample timestamps and find the sample before and after our provided sample_time value.
+static void find_bounding_sample_time_indices(const acl::track_float1f& sample_times, float sample_time, uint32_t& out_sample_index0, uint32_t& out_sample_index1)
 {
 	const uint32_t num_gltf_sample_times = sample_times.get_num_samples();
 
@@ -323,11 +324,19 @@ static void find_linear_interpolation_values(const acl::track_float1f& sample_ti
 
 	out_sample_index0 = gltf_sample0;
 	out_sample_index1 = gltf_sample1;
-
-	const float gltf_sample_time0 = sample_times[gltf_sample0];
-	const float gltf_sample_time1 = sample_times[gltf_sample1];
-	out_interpolation_alpha = rtm::scalar_clamp((sample_time - gltf_sample_time0) / (gltf_sample_time1 - gltf_sample_time0), 0.0F, 1.0F);
 }
+
+static float calculate_linear_interpolation_alpha(const acl::track_float1f& sample_times, float sample_time, uint32_t sample_index0, uint32_t sample_index1)
+{
+	const float gltf_sample_time0 = sample_times[sample_index0];
+	const float gltf_sample_time1 = sample_times[sample_index1];
+	return rtm::scalar_clamp((sample_time - gltf_sample_time0) / (gltf_sample_time1 - gltf_sample_time0), 0.0F, 1.0F);
+}
+
+static constexpr uint32_t k_num_cubic_samples_values = 3;
+static constexpr uint32_t k_cubic_in_tangent_index = 0;
+static constexpr uint32_t k_cubic_sample_index = 1;
+static constexpr uint32_t k_cubic_out_tangent_index = 2;
 
 acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Animation& animation, const hierarchy_description& hierarchy, const acl::RigidSkeleton& skeleton, acl::IAllocator& allocator)
 {
@@ -387,8 +396,9 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 
 					uint32_t gltf_sample0 = 0;
 					uint32_t gltf_sample1 = 0;
-					float interpolation_alpha = 0.0F;
-					find_linear_interpolation_values(sample_times, sample_time, gltf_sample0, gltf_sample1, interpolation_alpha);
+					find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+					const float interpolation_alpha = calculate_linear_interpolation_alpha(sample_times, sample_time, gltf_sample0, gltf_sample1);
 
 					const rtm::quatf sample0 = rtm::quat_normalize(rtm::vector_to_quat(rtm::vector_load(&sample_values[gltf_sample0])));
 					const rtm::quatf sample1 = rtm::quat_normalize(rtm::vector_to_quat(rtm::vector_load(&sample_values[gltf_sample1])));
@@ -397,9 +407,60 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 					bone.rotation_track.set_sample(sample_index, rtm::quat_cast(sample));
 				}
 			}
+			else if (sampler.interpolation == "STEP")
+			{
+				for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+				{
+					const float sample_time = rtm::scalar_min(float(sample_index) / sample_rate, duration);
+
+					uint32_t gltf_sample0 = 0;
+					uint32_t gltf_sample1 = 0;
+					find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+					const rtm::quatf sample = rtm::quat_normalize(rtm::vector_to_quat(rtm::vector_load(&sample_values[gltf_sample0])));
+
+					bone.rotation_track.set_sample(sample_index, rtm::quat_cast(sample));
+				}
+			}
+			else if (sampler.interpolation == "CUBICSPLINE")
+			{
+				ACL_ASSERT(sample_values.get_num_samples() >= 4, "Need at least 4 samples for cubic interpolation");
+
+				for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+				{
+					const float sample_time = rtm::scalar_min(float(sample_index) / sample_rate, duration);
+
+					uint32_t gltf_sample0 = 0;
+					uint32_t gltf_sample1 = 0;
+					find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+					// The cubic interpolation formula that glTF uses:
+					// p(t) = (2t^3 - 3t^2 + 1)p0 + (t^3 - 2t^2 + t)m0 + (-2t^3 + 3t^2)p1 + (t^3 - t^2)m1
+					// See: https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md#appendix-c-spline-interpolation
+
+					const rtm::vector4f p0 = rtm::vector_load(&sample_values[(gltf_sample0 * k_num_cubic_samples_values) + k_cubic_sample_index]);
+					const rtm::vector4f m0 = rtm::vector_load(&sample_values[(gltf_sample0 * k_num_cubic_samples_values) + k_cubic_out_tangent_index]);
+					const rtm::vector4f p1 = rtm::vector_load(&sample_values[(gltf_sample1 * k_num_cubic_samples_values) + k_cubic_sample_index]);
+					const rtm::vector4f m1 = rtm::vector_load(&sample_values[(gltf_sample1 * k_num_cubic_samples_values) + k_cubic_in_tangent_index]);
+
+					const float t = calculate_linear_interpolation_alpha(sample_times, sample_time, gltf_sample0, gltf_sample1);
+					const float t2 = t * t;
+					const float t3 = t2 * t;
+
+					const float p0_scale = (t3 * 2.0F) - (t2 * 3.0F) + 1;
+					const float m0_scale = t3 - (t2 * 2.0F) + t;
+					const float p1_scale = (t3 * -2.0F) + (t2 * 3.0F);
+					const float m1_scale = t3 - t2;
+
+					const rtm::vector4f sample_v = rtm::vector_mul_add(m1, m1_scale, rtm::vector_mul_add(p1, p1_scale, rtm::vector_mul_add(m0, m0_scale, rtm::vector_mul(p0, p0_scale))));
+					const rtm::quatf sample = rtm::quat_normalize(rtm::vector_to_quat(sample_v));
+
+					bone.rotation_track.set_sample(sample_index, rtm::quat_cast(sample));
+				}
+			}
 			else
 			{
-				ACL_ASSERT(false, "Interpolation mode not supported");
+				ACL_ASSERT(false, "Interpolation mode not supported: %s", sampler.interpolation.c_str());
 			}
 		}
 		else if (channel.target_path == "translation")
@@ -416,8 +477,9 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 
 					uint32_t gltf_sample0 = 0;
 					uint32_t gltf_sample1 = 0;
-					float interpolation_alpha = 0.0F;
-					find_linear_interpolation_values(sample_times, sample_time, gltf_sample0, gltf_sample1, interpolation_alpha);
+					find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+					const float interpolation_alpha = calculate_linear_interpolation_alpha(sample_times, sample_time, gltf_sample0, gltf_sample1);
 
 					const rtm::vector4f sample0 = rtm::vector_load3(&sample_values[gltf_sample0]);
 					const rtm::vector4f sample1 = rtm::vector_load3(&sample_values[gltf_sample1]);
@@ -426,9 +488,59 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 					bone.translation_track.set_sample(sample_index, rtm::vector_cast(sample));
 				}
 			}
+			else if (sampler.interpolation == "STEP")
+			{
+				for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+				{
+					const float sample_time = rtm::scalar_min(float(sample_index) / sample_rate, duration);
+
+					uint32_t gltf_sample0 = 0;
+					uint32_t gltf_sample1 = 0;
+					find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+					const rtm::vector4f sample = rtm::vector_load3(&sample_values[gltf_sample0]);
+
+					bone.translation_track.set_sample(sample_index, rtm::vector_cast(sample));
+				}
+			}
+			else if (sampler.interpolation == "CUBICSPLINE")
+			{
+				ACL_ASSERT(sample_values.get_num_samples() >= 4, "Need at least 4 samples for cubic interpolation");
+
+				for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+				{
+					const float sample_time = rtm::scalar_min(float(sample_index) / sample_rate, duration);
+
+					uint32_t gltf_sample0 = 0;
+					uint32_t gltf_sample1 = 0;
+					find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+					// The cubic interpolation formula that glTF uses:
+					// p(t) = (2t^3 - 3t^2 + 1)p0 + (t^3 - 2t^2 + t)m0 + (-2t^3 + 3t^2)p1 + (t^3 - t^2)m1
+					// See: https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md#appendix-c-spline-interpolation
+
+					const rtm::vector4f p0 = rtm::vector_load3(&sample_values[(gltf_sample0 * k_num_cubic_samples_values) + k_cubic_sample_index]);
+					const rtm::vector4f m0 = rtm::vector_load3(&sample_values[(gltf_sample0 * k_num_cubic_samples_values) + k_cubic_out_tangent_index]);
+					const rtm::vector4f p1 = rtm::vector_load3(&sample_values[(gltf_sample1 * k_num_cubic_samples_values) + k_cubic_sample_index]);
+					const rtm::vector4f m1 = rtm::vector_load3(&sample_values[(gltf_sample1 * k_num_cubic_samples_values) + k_cubic_in_tangent_index]);
+
+					const float t = calculate_linear_interpolation_alpha(sample_times, sample_time, gltf_sample0, gltf_sample1);
+					const float t2 = t * t;
+					const float t3 = t2 * t;
+
+					const float p0_scale = (t3 * 2.0F) - (t2 * 3.0F) + 1;
+					const float m0_scale = t3 - (t2 * 2.0F) + t;
+					const float p1_scale = (t3 * -2.0F) + (t2 * 3.0F);
+					const float m1_scale = t3 - t2;
+
+					const rtm::vector4f sample = rtm::vector_mul_add(m1, m1_scale, rtm::vector_mul_add(p1, p1_scale, rtm::vector_mul_add(m0, m0_scale, rtm::vector_mul(p0, p0_scale))));
+
+					bone.translation_track.set_sample(sample_index, rtm::vector_cast(sample));
+				}
+			}
 			else
 			{
-				ACL_ASSERT(false, "Interpolation mode not supported");
+				ACL_ASSERT(false, "Interpolation mode not supported: %s", sampler.interpolation.c_str());
 			}
 		}
 		else if (channel.target_path == "scale")
@@ -445,8 +557,9 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 
 					uint32_t gltf_sample0 = 0;
 					uint32_t gltf_sample1 = 0;
-					float interpolation_alpha = 0.0F;
-					find_linear_interpolation_values(sample_times, sample_time, gltf_sample0, gltf_sample1, interpolation_alpha);
+					find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+					const float interpolation_alpha = calculate_linear_interpolation_alpha(sample_times, sample_time, gltf_sample0, gltf_sample1);
 
 					const rtm::vector4f sample0 = rtm::vector_load3(&sample_values[gltf_sample0]);
 					const rtm::vector4f sample1 = rtm::vector_load3(&sample_values[gltf_sample1]);
@@ -455,9 +568,59 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 					bone.scale_track.set_sample(sample_index, rtm::vector_cast(sample));
 				}
 			}
+			else if (sampler.interpolation == "STEP")
+			{
+				for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+				{
+					const float sample_time = rtm::scalar_min(float(sample_index) / sample_rate, duration);
+
+					uint32_t gltf_sample0 = 0;
+					uint32_t gltf_sample1 = 0;
+					find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+					const rtm::vector4f sample = rtm::vector_load3(&sample_values[gltf_sample0]);
+
+					bone.scale_track.set_sample(sample_index, rtm::vector_cast(sample));
+				}
+			}
+			else if (sampler.interpolation == "CUBICSPLINE")
+			{
+				ACL_ASSERT(sample_values.get_num_samples() >= 4, "Need at least 4 samples for cubic interpolation");
+
+				for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+				{
+					const float sample_time = rtm::scalar_min(float(sample_index) / sample_rate, duration);
+
+					uint32_t gltf_sample0 = 0;
+					uint32_t gltf_sample1 = 0;
+					find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+					// The cubic interpolation formula that glTF uses:
+					// p(t) = (2t^3 - 3t^2 + 1)p0 + (t^3 - 2t^2 + t)m0 + (-2t^3 + 3t^2)p1 + (t^3 - t^2)m1
+					// See: https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md#appendix-c-spline-interpolation
+
+					const rtm::vector4f p0 = rtm::vector_load3(&sample_values[(gltf_sample0 * k_num_cubic_samples_values) + k_cubic_sample_index]);
+					const rtm::vector4f m0 = rtm::vector_load3(&sample_values[(gltf_sample0 * k_num_cubic_samples_values) + k_cubic_out_tangent_index]);
+					const rtm::vector4f p1 = rtm::vector_load3(&sample_values[(gltf_sample1 * k_num_cubic_samples_values) + k_cubic_sample_index]);
+					const rtm::vector4f m1 = rtm::vector_load3(&sample_values[(gltf_sample1 * k_num_cubic_samples_values) + k_cubic_in_tangent_index]);
+
+					const float t = calculate_linear_interpolation_alpha(sample_times, sample_time, gltf_sample0, gltf_sample1);
+					const float t2 = t * t;
+					const float t3 = t2 * t;
+
+					const float p0_scale = (t3 * 2.0F) - (t2 * 3.0F) + 1;
+					const float m0_scale = t3 - (t2 * 2.0F) + t;
+					const float p1_scale = (t3 * -2.0F) + (t2 * 3.0F);
+					const float m1_scale = t3 - t2;
+
+					const rtm::vector4f sample = rtm::vector_mul_add(m1, m1_scale, rtm::vector_mul_add(p1, p1_scale, rtm::vector_mul_add(m0, m0_scale, rtm::vector_mul(p0, p0_scale))));
+
+					bone.scale_track.set_sample(sample_index, rtm::vector_cast(sample));
+				}
+			}
 			else
 			{
-				ACL_ASSERT(false, "Interpolation mode not supported");
+				ACL_ASSERT(false, "Interpolation mode not supported: %s", sampler.interpolation.c_str());
 			}
 		}
 		else
