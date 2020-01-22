@@ -447,7 +447,7 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 					const float t2 = t * t;
 					const float t3 = t2 * t;
 
-					const float p0_scale = (t3 * 2.0F) - (t2 * 3.0F) + 1;
+					const float p0_scale = (t3 * 2.0F) - (t2 * 3.0F) + 1.0F;
 					const float m0_scale = t3 - (t2 * 2.0F) + t;
 					const float p1_scale = (t3 * -2.0F) + (t2 * 3.0F);
 					const float m1_scale = t3 - t2;
@@ -528,7 +528,7 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 					const float t2 = t * t;
 					const float t3 = t2 * t;
 
-					const float p0_scale = (t3 * 2.0F) - (t2 * 3.0F) + 1;
+					const float p0_scale = (t3 * 2.0F) - (t2 * 3.0F) + 1.0F;
 					const float m0_scale = t3 - (t2 * 2.0F) + t;
 					const float p1_scale = (t3 * -2.0F) + (t2 * 3.0F);
 					const float m1_scale = t3 - t2;
@@ -608,7 +608,7 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 					const float t2 = t * t;
 					const float t3 = t2 * t;
 
-					const float p0_scale = (t3 * 2.0F) - (t2 * 3.0F) + 1;
+					const float p0_scale = (t3 * 2.0F) - (t2 * 3.0F) + 1.0F;
 					const float m0_scale = t3 - (t2 * 2.0F) + t;
 					const float p1_scale = (t3 * -2.0F) + (t2 * 3.0F);
 					const float m1_scale = t3 - t2;
