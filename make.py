@@ -203,7 +203,7 @@ def compress_file(acl_gltf_exe_path, input_filename, output_filename):
 		print(output.decode(sys.stdout.encoding))
 		return True
 	except subprocess.CalledProcessError as e:
-		print('Failed to compress glTF file: {}'.format(" ".join(args)))
+		print('Failed to compress glTF file: {}'.format(" ".join(args).replace('\\\\?\\', '')))
 		print(e.output.decode(sys.stdout.encoding))
 		return False
 
@@ -216,7 +216,7 @@ def decompress_file(acl_gltf_exe_path, input_filename, output_filename):
 		print(output.decode(sys.stdout.encoding))
 		return True
 	except subprocess.CalledProcessError as e:
-		print('Failed to decompress glTF file: {}'.format(" ".join(args)))
+		print('Failed to decompress glTF file: {}'.format(" ".join(args).replace('\\\\?\\', '')))
 		print(e.output.decode(sys.stdout.encoding))
 		return False
 
@@ -229,7 +229,7 @@ def diff_files(acl_gltf_exe_path, input_filename0, input_filename1):
 		print(output.decode(sys.stdout.encoding))
 		return True
 	except subprocess.CalledProcessError as e:
-		print('Failed to diff glTF files: {}'.format(" ".join(args)))
+		print('Failed to diff glTF files: {}'.format(" ".join(args).replace('\\\\?\\', '')))
 		print(e.output.decode(sys.stdout.encoding))
 		return False
 
