@@ -557,8 +557,9 @@ static bool decompress_scalar_weights(tinygltf::Model& model, tinygltf::Animatio
 
 			// Copy our compressed data since we'll add buffers and the data might be invalidated
 			void* weight_tracks_ptr = allocator.allocate(tracks->get_size(), alignof(acl::compressed_tracks));
+			std::memcpy(weight_tracks_ptr, tracks, tracks->get_size());
+
 			weight_tracks = static_cast<acl::compressed_tracks*>(weight_tracks_ptr);
-			std::memcpy(weight_tracks, tracks, tracks->get_size());
 		}
 
 		const uint32_t num_tracks = weight_tracks->get_num_tracks();
