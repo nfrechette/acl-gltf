@@ -106,7 +106,7 @@ static bool measure_transform_nodes_error(const tinygltf::Model& model0, const t
 	}
 	else
 	{
-		clip0 = std::make_unique<acl::AnimationClip>(build_clip(model0, animation0, hierarchy0, skeleton0, allocator));
+		clip0.reset(new acl::AnimationClip(build_clip(model0, animation0, hierarchy0, skeleton0, allocator)));
 	}
 
 	int acl_buffer_view_index1 = -1;
@@ -126,7 +126,7 @@ static bool measure_transform_nodes_error(const tinygltf::Model& model0, const t
 	}
 	else
 	{
-		clip1 = std::make_unique<acl::AnimationClip>(build_clip(model1, animation1, hierarchy0, skeleton0, allocator));
+		clip1.reset(new acl::AnimationClip(build_clip(model1, animation1, hierarchy0, skeleton0, allocator)));
 	}
 
 	// Calculate the error between the two clips
@@ -242,7 +242,7 @@ static bool measure_scalar_weights_error(const tinygltf::Model& model0, const ti
 		}
 		else
 		{
-			raw_tracks0 = std::make_unique<acl::track_array_float1f>(build_weight_tracks(model0, animation0, *channel0, allocator));
+			raw_tracks0.reset(new acl::track_array_float1f(build_weight_tracks(model0, animation0, *channel0, allocator)));
 		}
 
 		int acl_buffer_view_index1 = -1;
@@ -268,7 +268,7 @@ static bool measure_scalar_weights_error(const tinygltf::Model& model0, const ti
 		}
 		else
 		{
-			raw_tracks1 = std::make_unique<acl::track_array_float1f>(build_weight_tracks(model1, animation1, *channel1, allocator));
+			raw_tracks1.reset(new acl::track_array_float1f(build_weight_tracks(model1, animation1, *channel1, allocator)));
 		}
 
 		// Calculate the error between the track list inputs
