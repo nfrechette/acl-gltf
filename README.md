@@ -7,7 +7,13 @@
 
 # Animation Compression Library glTF toolkit
 
-This toolkit contains a set of tools to convert raw glTF animations from/to compressed glTF animations by using the [Animation Compression Library](https://github.com/nfrechette/acl). In time, a proper glTF extension will be standardized.
+This toolkit contains a tool to convert compress and decompress glTF animations by using the [Animation Compression Library](https://github.com/nfrechette/acl). In time, a proper glTF extension will hopefully be standardized.
+
+For the time being, `acl-gltf` only serves as a reference and toy. Sadly, glTF is not a suitable file format for a pipeline. It is not possible for a standalone tool to safely process a glTF file without knowing about and supporting every possible extension used in the wild. As such, `acl-gltf` leaves a lot of unused metadata in its output and no raw data is freed to ensure maximum safety.
+
+===> **THIS TOOL IS NOT SUITABLE FOR PRODUCTION USE!** <===
+
+Until an ACL extension is standardized, it is recommended to use this tool as inspiration to see how to compress glTF animations. As such, it is merely a proof of concept.
 
 ## Supported platforms
 
