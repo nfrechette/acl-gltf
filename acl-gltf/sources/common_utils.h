@@ -29,6 +29,7 @@
 #include <acl/compression/animation_clip.h>
 #include <acl/compression/skeleton.h>
 #include <acl/compression/track.h>
+#include <acl/compression/track_array.h>
 #include <acl/core/ansi_allocator.h>
 
 #include <vector>
@@ -44,14 +45,28 @@ struct hierarchy_description
 	uint16_t num_transforms;
 };
 
+struct channel_weight_animation
+{
+	const tinygltf::AnimationChannel* channel;
+	acl::track_array_float1f tracks;
+};
+
 hierarchy_description build_hierarchy(const tinygltf::Model& model);
 acl::RigidSkeleton build_skeleton(const tinygltf::Model& model, const hierarchy_description& hierarchy, acl::IAllocator& allocator);
 acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Animation& animation, const hierarchy_description& hierarchy, const acl::RigidSkeleton& skeleton, acl::IAllocator& allocator);
 
+std::vector<const tinygltf::AnimationChannel*> find_weight_channels(const tinygltf::Animation& animation);
+const std::vector<double>& find_default_weights(const tinygltf::Model& model, const tinygltf::Node& node);
+acl::track_array_float1f build_weight_tracks(const tinygltf::Model& model, const tinygltf::Animation& animation, const tinygltf::AnimationChannel& channel, acl::IAllocator& allocator);
+std::vector<channel_weight_animation> build_weight_tracks(const tinygltf::Model& model, const tinygltf::Animation& animation, acl::IAllocator& allocator);
+
 uint32_t get_raw_animation_size(const tinygltf::Model& model, const tinygltf::Animation& animation);
 bool is_animation_compressed_with_acl(const tinygltf::Model& model, const tinygltf::Animation& animation, int& out_acl_buffer_view_index);
+bool has_compressed_weights_with_acl(const tinygltf::Model& model, const tinygltf::Animation& animation, const tinygltf::AnimationChannel& channel, int& out_acl_buffer_view_index);
 bool is_binary_gltf_filename(const std::string& filename);
 
+void reset_accessor(tinygltf::Accessor& accessor);
+void reset_animation_sampler(tinygltf::AnimationSampler& sampler);
 void reset_buffer_view(tinygltf::BufferView& buffer_view);
 void reset_buffer(tinygltf::Buffer& buffer);
 
