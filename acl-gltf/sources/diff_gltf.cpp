@@ -32,7 +32,9 @@
 #include <acl/compression/skeleton_error_metric.h>
 #include <acl/compression/track.h>
 #include <acl/compression/track_array.h>
+#include <acl/compression/track_error.h>
 #include "acl/compression/utils.h"
+#include <acl/decompression/decompress.h>
 #include "acl/decompression/default_output_writer.h"
 #include <acl/core/ansi_allocator.h>
 #include <acl/core/utils.h>
@@ -41,6 +43,7 @@
 
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <vector>
 
 static bool validate_input(const tinygltf::Model& model)
@@ -69,6 +72,250 @@ static bool validate_input(const tinygltf::Model& model)
 		return false;
 	}
 
+	return true;
+}
+
+static bool measure_transform_nodes_error(const tinygltf::Model& model0, const tinygltf::Animation& animation0, const tinygltf::Model& model1, const tinygltf::Animation& animation1)
+{
+	acl::ANSIAllocator allocator;
+
+	// Load up our skeleton, they should be identical, pick one
+	const hierarchy_description hierarchy0 = build_hierarchy(model0);
+	const acl::RigidSkeleton skeleton0 = build_skeleton(model0, hierarchy0, allocator);
+
+	// Load our clips into ACL structures
+	std::unique_ptr<acl::AnimationClip> clip0;
+	std::unique_ptr<acl::AnimationClip> clip1;
+	const acl::CompressedClip* compressed_clip0 = nullptr;
+	const acl::CompressedClip* compressed_clip1 = nullptr;
+
+	int acl_buffer_view_index0 = -1;
+	if (is_animation_compressed_with_acl(model0, animation0, acl_buffer_view_index0))
+	{
+		const int acl_buffer_index0 = model0.bufferViews[acl_buffer_view_index0].buffer;
+
+		const tinygltf::Buffer& acl_buffer0 = model0.buffers[acl_buffer_index0];
+
+		compressed_clip0 = reinterpret_cast<const acl::CompressedClip*>(acl_buffer0.data.data());
+		const acl::ErrorResult is_valid_result = compressed_clip0->is_valid(true);
+		if (is_valid_result.any())
+		{
+			printf("    ACL data is invalid: %s\n", is_valid_result.c_str());
+			return false;
+		}
+	}
+	else
+	{
+		clip0 = std::make_unique<acl::AnimationClip>(build_clip(model0, animation0, hierarchy0, skeleton0, allocator));
+	}
+
+	int acl_buffer_view_index1 = -1;
+	if (is_animation_compressed_with_acl(model1, animation1, acl_buffer_view_index1))
+	{
+		const int acl_buffer_index1 = model1.bufferViews[acl_buffer_view_index1].buffer;
+
+		const tinygltf::Buffer& acl_buffer1 = model1.buffers[acl_buffer_index1];
+
+		compressed_clip1 = reinterpret_cast<const acl::CompressedClip*>(acl_buffer1.data.data());
+		const acl::ErrorResult is_valid_result = compressed_clip1->is_valid(true);
+		if (is_valid_result.any())
+		{
+			printf("    ACL data is invalid: %s\n", is_valid_result.c_str());
+			return false;
+		}
+	}
+	else
+	{
+		clip1 = std::make_unique<acl::AnimationClip>(build_clip(model1, animation1, hierarchy0, skeleton0, allocator));
+	}
+
+	// Calculate the error between the two clips
+	acl::qvvf_transform_error_metric error_metric;
+	acl::BoneError bone_error;
+
+	if (clip0 && clip1)
+	{
+		// Both clips are raw
+		bone_error = acl::calculate_error_between_clips(allocator, error_metric, *clip0, *clip1);
+	}
+	else if (clip0 && compressed_clip1 != nullptr)
+	{
+		// First clip is raw, the second has compressed ACL data
+		acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context;
+		context.initialize(*compressed_clip1);
+
+		bone_error = acl::calculate_error_between_clips(allocator, error_metric, *clip0, context);
+	}
+	else if (compressed_clip0 != nullptr && clip1)
+	{
+		// First has compressed ACL data, the second is raw
+		acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context;
+		context.initialize(*compressed_clip0);
+
+		bone_error = acl::calculate_error_between_clips(allocator, error_metric, *clip1, context);
+	}
+	else if (compressed_clip0 != nullptr && compressed_clip1 != nullptr)
+	{
+		// Both have compressed ACL data
+		acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context0;
+		context0.initialize(*compressed_clip0);
+
+		acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context1;
+		context1.initialize(*compressed_clip1);
+
+		bone_error = acl::calculate_error_between_clips(allocator, error_metric, skeleton0, context0, context1);
+	}
+	else
+	{
+		ACL_ASSERT(false, "Invalid state");
+		return false;
+	}
+
+	const char* worst_bone_name = bone_error.index == acl::k_invalid_bone_index ? "<Unknown>" : skeleton0.get_bone(bone_error.index).name.c_str();
+	printf("    Largest error of %.2f mm on transform %u ('%s') @ %.2f sec\n", bone_error.error * 1000.0F, bone_error.index, worst_bone_name, bone_error.sample_time);
+
+	// Success
+	return true;
+}
+
+static bool measure_scalar_weights_error(const tinygltf::Model& model0, const tinygltf::Animation& animation0, const tinygltf::Model& model1, const tinygltf::Animation& animation1)
+{
+	acl::ANSIAllocator allocator;
+
+	const std::vector<const tinygltf::AnimationChannel*> channels0 = find_weight_channels(animation0);
+	const std::vector<const tinygltf::AnimationChannel*> channels1 = find_weight_channels(animation1);
+
+	const size_t num_channels = channels0.size();
+	if (num_channels != channels1.size())
+	{
+		printf("Input animations do not have the same number of weight channels, cannot diff\n");
+		return false;
+	}
+
+	for (size_t channel_index = 0; channel_index < num_channels; ++channel_index)
+	{
+		const tinygltf::AnimationChannel* channel0 = channels0[channel_index];
+		const tinygltf::AnimationChannel* channel1 = channels1[channel_index];
+		if (channel0->target_node != channel1->target_node)
+		{
+			printf("Animation weight channels do not target the same node, cannot diff\n");
+			return false;
+		}
+
+		const std::vector<double>& default_weights0 = find_default_weights(model0, model0.nodes[channel0->target_node]);
+		const std::vector<double>& default_weights1 = find_default_weights(model1, model1.nodes[channel1->target_node]);
+		if (default_weights0 != default_weights1)
+		{
+			printf("Input animations do not have the same default weights, cannot diff\n");
+			return false;
+		}
+
+		if (default_weights0.empty())
+			continue;	// No weights to diff
+
+		// Load our scalar weights into ACL structures
+		std::unique_ptr<acl::track_array_float1f> raw_tracks0;
+		std::unique_ptr<acl::track_array_float1f> raw_tracks1;
+		const acl::compressed_tracks* compressed_tracks0 = nullptr;
+		const acl::compressed_tracks* compressed_tracks1 = nullptr;
+
+		int acl_buffer_view_index0 = -1;
+		if (is_animation_compressed_with_acl(model0, animation0, acl_buffer_view_index0))
+		{
+			int acl_weights_buffer_view_index;
+			if (!has_compressed_weights_with_acl(model0, animation0, *channel0, acl_weights_buffer_view_index))
+			{
+				printf("Expected scalar weights to be compressed with ACL, cannot diff\n");
+				return false;
+			}
+
+			const int acl_weights_buffer_index = model0.bufferViews[acl_weights_buffer_view_index].buffer;
+			const tinygltf::Buffer& acl_buffer = model0.buffers[acl_weights_buffer_index];
+
+			compressed_tracks0 = reinterpret_cast<const acl::compressed_tracks*>(acl_buffer.data.data());
+			const acl::ErrorResult is_valid_result = compressed_tracks0->is_valid(true);
+			if (is_valid_result.any())
+			{
+				printf("    ACL weight data is invalid: %s\n", is_valid_result.c_str());
+				return false;
+			}
+		}
+		else
+		{
+			raw_tracks0 = std::make_unique<acl::track_array_float1f>(build_weight_tracks(model0, animation0, *channel0, allocator));
+		}
+
+		int acl_buffer_view_index1 = -1;
+		if (is_animation_compressed_with_acl(model1, animation1, acl_buffer_view_index1))
+		{
+			int acl_weights_buffer_view_index;
+			if (!has_compressed_weights_with_acl(model1, animation1, *channel1, acl_weights_buffer_view_index))
+			{
+				printf("Expected scalar weights to be compressed with ACL, cannot diff\n");
+				return false;
+			}
+
+			const int acl_weights_buffer_index = model1.bufferViews[acl_weights_buffer_view_index].buffer;
+			const tinygltf::Buffer& acl_buffer = model1.buffers[acl_weights_buffer_index];
+
+			compressed_tracks1 = reinterpret_cast<const acl::compressed_tracks*>(acl_buffer.data.data());
+			const acl::ErrorResult is_valid_result = compressed_tracks1->is_valid(true);
+			if (is_valid_result.any())
+			{
+				printf("    ACL weight data is invalid: %s\n", is_valid_result.c_str());
+				return false;
+			}
+		}
+		else
+		{
+			raw_tracks1 = std::make_unique<acl::track_array_float1f>(build_weight_tracks(model1, animation1, *channel1, allocator));
+		}
+
+		// Calculate the error between the track list inputs
+		acl::track_error track_err;
+
+		if (raw_tracks0 && raw_tracks1)
+		{
+			// Both track lists are raw
+			track_err = acl::calculate_compression_error(allocator, *raw_tracks0, *raw_tracks1);
+		}
+		else if (raw_tracks0 && compressed_tracks1 != nullptr)
+		{
+			// First track list is raw, the second has compressed ACL data
+			acl::decompression_context<acl::debug_decompression_settings> context;
+			context.initialize(*compressed_tracks1);
+
+			track_err = acl::calculate_compression_error(allocator, *raw_tracks0, context);
+		}
+		else if (compressed_tracks0 != nullptr && raw_tracks1)
+		{
+			// First has compressed ACL data, the second is raw
+			acl::decompression_context<acl::debug_decompression_settings> context;
+			context.initialize(*compressed_tracks0);
+
+			track_err = acl::calculate_compression_error(allocator, *raw_tracks1, context);
+		}
+		else if (compressed_tracks0 != nullptr && compressed_tracks1 != nullptr)
+		{
+			// Both have compressed ACL data
+			acl::decompression_context<acl::debug_decompression_settings> context0;
+			context0.initialize(*compressed_tracks0);
+
+			acl::decompression_context<acl::debug_decompression_settings> context1;
+			context1.initialize(*compressed_tracks1);
+
+			track_err = acl::calculate_compression_error(allocator, context0, context1);
+		}
+		else
+		{
+			ACL_ASSERT(false, "Invalid state");
+			return false;
+		}
+
+		printf("    Largest weight error of %.4f on weight track %u @ %.2f sec\n", track_err.error, track_err.index, track_err.sample_time);
+	}
+
+	// Success
 	return true;
 }
 
@@ -143,7 +390,6 @@ bool diff_gltf(const command_line_options& options)
 		return true;
 	}
 
-	acl::ANSIAllocator allocator;
 	bool any_failed = false;
 
 	for (size_t animation_index = 0; animation_index < num_animations; ++animation_index)
@@ -160,106 +406,21 @@ bool diff_gltf(const command_line_options& options)
 
 		printf("Processing animation '%s' ...\n", animation0.name.empty() ? "<unnamed>" : animation0.name.c_str());
 
-		// Load up our skeleton, they should be identical, pick one
-		const hierarchy_description hierarchy0 = build_hierarchy(model0);
-		const acl::RigidSkeleton skeleton0 = build_skeleton(model0, hierarchy0, allocator);
-
-		// Load our clips into ACL structures
-		const acl::AnimationClip* clip0 = nullptr;
-		const acl::AnimationClip* clip1 = nullptr;
-		const acl::CompressedClip* compressed_clip0 = nullptr;
-		const acl::CompressedClip* compressed_clip1 = nullptr;
-
-		int acl_buffer_view_index0 = -1;
-		if (is_animation_compressed_with_acl(model0, animation0, acl_buffer_view_index0))
+		// Measure the error for our hierarchical transforms
+		const bool measured_transform_error = measure_transform_nodes_error(model0, animation0, model1, animation1);
+		if (!measured_transform_error)
 		{
-			const int acl_buffer_index0 = model0.bufferViews[acl_buffer_view_index0].buffer;
-
-			const tinygltf::Buffer& acl_buffer0 = model0.buffers[acl_buffer_index0];
-
-			compressed_clip0 = reinterpret_cast<const acl::CompressedClip*>(acl_buffer0.data.data());
-			const acl::ErrorResult is_valid_result = compressed_clip0->is_valid(true);
-			if (is_valid_result.any())
-			{
-				printf("    ACL data is invalid: %s\n", is_valid_result.c_str());
-				any_failed = true;
-				continue;
-			}
-		}
-		else
-		{
-			clip0 = new acl::AnimationClip(build_clip(model0, animation0, hierarchy0, skeleton0, allocator));
-		}
-
-		int acl_buffer_view_index1 = -1;
-		if (is_animation_compressed_with_acl(model1, animation1, acl_buffer_view_index1))
-		{
-			const int acl_buffer_index1 = model1.bufferViews[acl_buffer_view_index1].buffer;
-
-			const tinygltf::Buffer& acl_buffer1 = model1.buffers[acl_buffer_index1];
-
-			compressed_clip1 = reinterpret_cast<const acl::CompressedClip*>(acl_buffer1.data.data());
-			const acl::ErrorResult is_valid_result = compressed_clip1->is_valid(true);
-			if (is_valid_result.any())
-			{
-				printf("    ACL data is invalid: %s\n", is_valid_result.c_str());
-				any_failed = true;
-				continue;
-			}
-		}
-		else
-		{
-			clip1 = new acl::AnimationClip(build_clip(model1, animation1, hierarchy0, skeleton0, allocator));
-		}
-
-		// Calculate the error between the two clips
-		acl::qvvf_transform_error_metric error_metric;
-		acl::BoneError bone_error;
-
-		if (clip0 != nullptr && clip1 != nullptr)
-		{
-			// Both clips are raw
-			bone_error = acl::calculate_error_between_clips(allocator, error_metric, *clip0, *clip1);
-		}
-		else if (clip0 != nullptr && compressed_clip1 != nullptr)
-		{
-			// First clip is raw, the second has compressed ACL data
-			acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context;
-			context.initialize(*compressed_clip1);
-
-			bone_error = acl::calculate_error_between_clips(allocator, error_metric, *clip0, context);
-		}
-		else if (compressed_clip0 != nullptr && clip1 != nullptr)
-		{
-			// First has compressed ACL data, the second is raw
-			acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context;
-			context.initialize(*compressed_clip0);
-
-			bone_error = acl::calculate_error_between_clips(allocator, error_metric, *clip1, context);
-		}
-		else if (compressed_clip0 != nullptr && compressed_clip1 != nullptr)
-		{
-			// Both have compressed ACL data
-			acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context0;
-			context0.initialize(*compressed_clip0);
-
-			acl::uniformly_sampled::DecompressionContext<acl::uniformly_sampled::DebugDecompressionSettings> context1;
-			context1.initialize(*compressed_clip1);
-
-			bone_error = acl::calculate_error_between_clips(allocator, error_metric, skeleton0, context0, context1);
-		}
-		else
-		{
-			ACL_ASSERT(false, "Invalid state");
 			any_failed = true;
+			continue;
 		}
 
-		const char* worst_bone_name = bone_error.index == acl::k_invalid_bone_index ? "<Unknown>" : skeleton0.get_bone(bone_error.index).name.c_str();
-		printf("    Largest error of %.2f mm on transform %u ('%s') @ %.2f sec\n", bone_error.error * 100.0F * 100.0F, bone_error.index, worst_bone_name, bone_error.sample_time);
-
-		// Free our raw clips if they were allocated
-		delete clip0;
-		delete clip1;
+		// Measure the error for our scalar weights
+		const bool measured_scalar_weights_error = measure_scalar_weights_error(model0, animation0, model1, animation1);
+		if (!measured_scalar_weights_error)
+		{
+			any_failed = true;
+			continue;
+		}
 	}
 
 	return !any_failed;

@@ -402,6 +402,8 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 
 					const rtm::quatf sample0 = rtm::quat_normalize(rtm::vector_to_quat(rtm::vector_load(&sample_values[gltf_sample0])));
 					const rtm::quatf sample1 = rtm::quat_normalize(rtm::vector_to_quat(rtm::vector_load(&sample_values[gltf_sample1])));
+
+					// TODO: Use slerp
 					const rtm::quatf sample = rtm::quat_lerp(sample0, sample1, interpolation_alpha);
 
 					bone.rotation_track.set_sample(sample_index, rtm::quat_cast(sample));
@@ -623,6 +625,10 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 				ACL_ASSERT(false, "Interpolation mode not supported: %s", sampler.interpolation.c_str());
 			}
 		}
+		else if (channel.target_path == "weights")
+		{
+			// Skip weights
+		}
 		else
 		{
 			ACL_ASSERT(false, "Channel target not supported: %s", channel.target_path.c_str());
@@ -630,6 +636,169 @@ acl::AnimationClip build_clip(const tinygltf::Model& model, const tinygltf::Anim
 	}
 
 	return clip;
+}
+
+std::vector<const tinygltf::AnimationChannel*> find_weight_channels(const tinygltf::Animation& animation)
+{
+	std::vector<const tinygltf::AnimationChannel*> channels;
+
+	for (const tinygltf::AnimationChannel& channel : animation.channels)
+	{
+		if (channel.target_path == "weights")
+			channels.push_back(&channel);
+	}
+
+	return channels;
+}
+
+const std::vector<double>& find_default_weights(const tinygltf::Model& model, const tinygltf::Node& node)
+{
+	// If the node has weights, they match the number on the mesh as well
+	if (!node.weights.empty())
+		return node.weights;
+
+	const tinygltf::Mesh& mesh = model.meshes[node.mesh];
+	return mesh.weights;
+}
+
+acl::track_array_float1f build_weight_tracks(const tinygltf::Model& model, const tinygltf::Animation& animation, const tinygltf::AnimationChannel& channel, acl::IAllocator& allocator)
+{
+	const float duration = find_clip_duration(model, animation);
+	const float sample_rate = find_clip_sample_rate(model, animation, duration);
+	const uint32_t num_samples = acl::calculate_num_samples(duration, sample_rate);
+
+	const int node_index = channel.target_node;
+	const std::vector<double>& default_weights = find_default_weights(model, model.nodes[node_index]);
+	const uint32_t num_weight_tracks = static_cast<uint32_t>(default_weights.size());
+
+	const tinygltf::AnimationSampler& sampler = animation.samplers[channel.sampler];
+	const tinygltf::Accessor& sample_time_accessor = model.accessors[sampler.input];
+	const tinygltf::Accessor& sample_value_accessor = model.accessors[sampler.output];
+
+	ACL_ASSERT(sample_time_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT, "Unexpected accessor component type");
+	ACL_ASSERT(sample_time_accessor.type == TINYGLTF_TYPE_SCALAR, "Unexpected accessor type");
+	ACL_ASSERT(!sample_time_accessor.normalized, "Normalized sample time not supported");
+
+	ACL_ASSERT(sample_value_accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT, "Unexpected accessor component type");
+	ACL_ASSERT(sample_value_accessor.type == TINYGLTF_TYPE_SCALAR, "Unexpected accessor type");
+	ACL_ASSERT(!sample_value_accessor.normalized, "Normalized sample time not supported");
+
+	const acl::track_float1f sample_times = make_track_ref<acl::track_float1f>(model, sample_time_accessor);
+	const acl::track_float1f sample_values = make_track_ref<acl::track_float1f>(model, sample_value_accessor);
+
+	acl::track_array_float1f tracks(allocator, num_weight_tracks);
+
+	// Setup and populate our sample values
+	for (uint32_t track_index = 0; track_index < num_weight_tracks; ++track_index)
+	{
+		const uint32_t track_base_sample_index = num_samples * track_index;
+
+		acl::track_desc_scalarf desc;
+		desc.output_index = track_index;
+		desc.precision = 0.001F;
+		desc.constant_threshold = 0.001F;
+
+		acl::track_float1f track = acl::track_float1f::make_reserve(desc, allocator, num_samples, sample_rate);
+
+		if (sampler.interpolation == "LINEAR")
+		{
+			for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+			{
+				const float sample_time = rtm::scalar_min(float(sample_index) / sample_rate, duration);
+
+				uint32_t gltf_sample0 = 0;
+				uint32_t gltf_sample1 = 0;
+				find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+				const float interpolation_alpha = calculate_linear_interpolation_alpha(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+				const rtm::scalarf sample0 = rtm::scalar_load(&sample_values[track_base_sample_index + gltf_sample0]);
+				const rtm::scalarf sample1 = rtm::scalar_load(&sample_values[track_base_sample_index + gltf_sample1]);
+				const rtm::scalarf sample = rtm::scalar_lerp(sample0, sample1, rtm::scalar_set(interpolation_alpha));
+
+				rtm::scalar_store(sample, &track[sample_index]);
+			}
+		}
+		else if (sampler.interpolation == "STEP")
+		{
+			for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+			{
+				const float sample_time = rtm::scalar_min(float(sample_index) / sample_rate, duration);
+
+				uint32_t gltf_sample0 = 0;
+				uint32_t gltf_sample1 = 0;
+				find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+				const rtm::scalarf sample = rtm::scalar_load(&sample_values[track_base_sample_index + gltf_sample0]);
+
+				rtm::scalar_store(sample, &track[sample_index]);
+			}
+		}
+		else if (sampler.interpolation == "CUBICSPLINE")
+		{
+			ACL_ASSERT(num_samples >= 4, "Need at least 4 samples for cubic interpolation");
+
+			for (uint32_t sample_index = 0; sample_index < num_samples; ++sample_index)
+			{
+				const float sample_time = rtm::scalar_min(float(sample_index) / sample_rate, duration);
+
+				uint32_t gltf_sample0 = 0;
+				uint32_t gltf_sample1 = 0;
+				find_bounding_sample_time_indices(sample_times, sample_time, gltf_sample0, gltf_sample1);
+
+				// The cubic interpolation formula that glTF uses:
+				// p(t) = (2t^3 - 3t^2 + 1)p0 + (t^3 - 2t^2 + t)m0 + (-2t^3 + 3t^2)p1 + (t^3 - t^2)m1
+				// See: https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md#appendix-c-spline-interpolation
+
+				const rtm::scalarf p0 = rtm::scalar_load(&sample_values[track_base_sample_index + (gltf_sample0 * k_num_cubic_samples_values) + k_cubic_sample_index]);
+				const rtm::scalarf m0 = rtm::scalar_load(&sample_values[track_base_sample_index + (gltf_sample0 * k_num_cubic_samples_values) + k_cubic_out_tangent_index]);
+				const rtm::scalarf p1 = rtm::scalar_load(&sample_values[track_base_sample_index + (gltf_sample1 * k_num_cubic_samples_values) + k_cubic_sample_index]);
+				const rtm::scalarf m1 = rtm::scalar_load(&sample_values[track_base_sample_index + (gltf_sample1 * k_num_cubic_samples_values) + k_cubic_in_tangent_index]);
+
+				const rtm::scalarf t = rtm::scalar_set(calculate_linear_interpolation_alpha(sample_times, sample_time, gltf_sample0, gltf_sample1));
+				const rtm::scalarf t2 = rtm::scalar_mul(t, t);
+				const rtm::scalarf t3 = rtm::scalar_mul(t2, t);
+
+				const rtm::scalarf p0_scale = rtm::scalar_add(rtm::scalar_sub(rtm::scalar_mul(t3, rtm::scalar_set(2.0F)), rtm::scalar_mul(t2, rtm::scalar_set(3.0F))), rtm::scalar_set(1.0F));
+				const rtm::scalarf m0_scale = rtm::scalar_add(rtm::scalar_sub(t3, rtm::scalar_mul(t2, rtm::scalar_set(2.0F))), t);
+				const rtm::scalarf p1_scale = rtm::scalar_add(rtm::scalar_mul(t3, rtm::scalar_set(-2.0F)), rtm::scalar_mul(t2, rtm::scalar_set(3.0F)));
+				const rtm::scalarf m1_scale = rtm::scalar_sub(t3, t2);
+
+				const rtm::scalarf sample = rtm::scalar_mul_add(m1, m1_scale, rtm::scalar_mul_add(p1, p1_scale, rtm::scalar_mul_add(m0, m0_scale, rtm::scalar_mul(p0, p0_scale))));
+
+				rtm::scalar_store(sample, &track[sample_index]);
+			}
+		}
+		else
+		{
+			ACL_ASSERT(false, "Interpolation mode not supported: %s", sampler.interpolation.c_str());
+		}
+
+		tracks[track_index] = std::move(track);
+	}
+
+	return tracks;
+}
+
+std::vector<channel_weight_animation> build_weight_tracks(const tinygltf::Model& model, const tinygltf::Animation& animation, acl::IAllocator& allocator)
+{
+	std::vector<channel_weight_animation> weight_animations;
+
+	const std::vector<const tinygltf::AnimationChannel*> channels_with_weight_tracks = find_weight_channels(animation);
+	for (const tinygltf::AnimationChannel* channel : channels_with_weight_tracks)
+	{
+		acl::track_array_float1f tracks = build_weight_tracks(model, animation, *channel, allocator);
+		if (tracks.get_num_tracks() == 0)
+			continue;	// Skip empty weight track lists
+
+		channel_weight_animation anim;
+		anim.channel = channel;
+		anim.tracks = std::move(tracks);
+
+		weight_animations.emplace_back(std::move(anim));
+	}
+
+	return weight_animations;
 }
 
 uint32_t get_raw_animation_size(const tinygltf::Model& model, const tinygltf::Animation& animation)
@@ -673,24 +842,47 @@ bool is_animation_compressed_with_acl(const tinygltf::Model& model, const tinygl
 		const tinygltf::Accessor& sample_time_accessor = model.accessors[sampler.input];
 		const tinygltf::Accessor& sample_value_accessor = model.accessors[sampler.output];
 
-		if (sample_time_accessor.bufferView != sample_value_accessor.bufferView)
-			return false;	// ACL requires a single buffer
-
 		if (sample_time_accessor.byteOffset != 0 || sample_value_accessor.byteOffset != 0)
-			return false;	// ACL requires a single buffer with no offset
+			return false;	// ACL requires buffers with no offset
 
 		if (sample_time_accessor.componentType != TINYGLTF_COMPONENT_TYPE_BYTE || sample_value_accessor.componentType != TINYGLTF_COMPONENT_TYPE_BYTE)
-			return false;	// ACL requires a byte buffer
+			return false;	// ACL requires byte buffers
 
 		if (sample_time_accessor.type != TINYGLTF_TYPE_SCALAR || sample_value_accessor.type != TINYGLTF_TYPE_SCALAR)
-			return false;	// ACL requires a scalar byte buffer
+			return false;	// ACL requires scalar byte buffers
 	}
 
-	const tinygltf::AnimationSampler& sampler = animation.samplers[animation.channels[0].sampler];
-	const tinygltf::Accessor& accessor = model.accessors[sampler.input];
-	out_acl_buffer_view_index = accessor.bufferView;
+	{
+		const tinygltf::AnimationSampler& sampler = animation.samplers[animation.channels[0].sampler];
+		const tinygltf::Accessor& sample_time_accessor = model.accessors[sampler.input];
+		out_acl_buffer_view_index = sample_time_accessor.bufferView;
+	}
 
 	return true;
+}
+
+bool has_compressed_weights_with_acl(const tinygltf::Model& model, const tinygltf::Animation& animation, const tinygltf::AnimationChannel& channel, int& out_acl_buffer_view_index)
+{
+	out_acl_buffer_view_index = -1;
+
+	const tinygltf::AnimationSampler& sampler = animation.samplers[channel.sampler];
+	const tinygltf::Accessor& sample_time_accessor = model.accessors[sampler.input];
+	const tinygltf::Accessor& sample_value_accessor = model.accessors[sampler.output];
+
+	if (sample_time_accessor.byteOffset != 0 || sample_value_accessor.byteOffset != 0)
+		return false;	// ACL requires buffers with no offset
+
+	if (sample_time_accessor.componentType != TINYGLTF_COMPONENT_TYPE_BYTE || sample_value_accessor.componentType != TINYGLTF_COMPONENT_TYPE_BYTE)
+		return false;	// ACL requires byte buffers
+
+	if (sample_time_accessor.type != TINYGLTF_TYPE_SCALAR || sample_value_accessor.type != TINYGLTF_TYPE_SCALAR)
+		return false;	// ACL requires scalar byte buffers
+
+	const bool has_compressed_weights = sample_time_accessor.bufferView != sample_value_accessor.bufferView;
+	if (has_compressed_weights)
+		out_acl_buffer_view_index = sample_value_accessor.bufferView;
+
+	return has_compressed_weights;
 }
 
 bool is_binary_gltf_filename(const std::string& filename)
@@ -698,14 +890,38 @@ bool is_binary_gltf_filename(const std::string& filename)
 	return filename.rfind(".gltf") == std::string::npos;
 }
 
+void reset_accessor(tinygltf::Accessor& accessor)
+{
+	accessor.bufferView = 0;	// Index must always be valid
+	accessor.byteOffset = 0;
+	accessor.componentType = TINYGLTF_COMPONENT_TYPE_FLOAT;
+	accessor.count = 0;
+	accessor.extras = tinygltf::Value();
+	accessor.maxValues.clear();
+	accessor.minValues.clear();
+	accessor.name = "";
+	accessor.normalized = false;
+	accessor.type = TINYGLTF_TYPE_SCALAR;
+
+	std::memset(&accessor.sparse, 0, sizeof(accessor.sparse));
+}
+
+void reset_animation_sampler(tinygltf::AnimationSampler& sampler)
+{
+	sampler.input = 0;	// Index must always be valid
+	sampler.output = 0;	// Index must always be valid
+	sampler.interpolation = "LINEAR";
+	sampler.extras = tinygltf::Value();
+}
+
 void reset_buffer_view(tinygltf::BufferView& buffer_view)
 {
 	buffer_view.buffer = 0;		// Index must always be valid
-	buffer_view.byteLength = 0;	// Empty
+	buffer_view.byteLength = 1;	// Valid glTF buffer views cannot be empty
 	buffer_view.byteOffset = 0;
 	buffer_view.byteStride = 0;
 	buffer_view.name.clear();
-	buffer_view.target = 0;		// TODO: Should this be set to TINYGLTF_TARGET_ARRAY_BUFFER ? glTF does not appear to define what is or isn't a valid value here
+	buffer_view.target = 0;		// Target is optional, it doesn't need a value
 	buffer_view.extras = tinygltf::Value();
 	buffer_view.dracoDecoded = false;
 }
@@ -715,7 +931,7 @@ void reset_buffer(tinygltf::Buffer& buffer)
 	// HACK BEGIN
 	// Due to a bug in tinygltf, buffers with 0 length perform an invalid access
 	// Set them to 1 byte
-	buffer.data.resize(1);
+	buffer.data.resize(1, 0);
 	// HACK END
 
 	buffer.name.clear();
