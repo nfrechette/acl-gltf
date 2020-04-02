@@ -51,7 +51,7 @@ def get_cmake_exes():
 		return ('cmake', 'ctest')
 
 def get_generator(compiler, cpu):
-	if compiler == None:
+	if not compiler:
 		return None
 
 	if platform.system() == 'Windows':
@@ -80,7 +80,7 @@ def get_generator(compiler, cpu):
 	sys.exit(1)
 
 def get_architecture(compiler, cpu):
-	if compiler == None:
+	if not compiler:
 		return None
 
 	if platform.system() == 'Windows':
@@ -139,7 +139,7 @@ def do_generate_solution(cmake_exe, build_dir, cmake_script_dir, args):
 	cpu = args.cpu
 	config = args.config
 
-	if not compiler == None:
+	if compiler:
 		set_compiler_env(compiler, args)
 
 	extra_switches = ['--no-warn-unused-cli']
@@ -165,7 +165,7 @@ def do_generate_solution(cmake_exe, build_dir, cmake_script_dir, args):
 	print('Generating build files ...')
 	cmake_cmd = '"{}" .. -DCMAKE_INSTALL_PREFIX="{}" {}'.format(cmake_exe, build_dir, ' '.join(extra_switches))
 	cmake_generator = get_generator(compiler, cpu)
-	if cmake_generator == None:
+	if not cmake_generator:
 		print('Using default generator')
 	else:
 		print('Using generator: {} {}'.format(cmake_generator, generator_suffix))
@@ -351,7 +351,7 @@ if __name__ == "__main__":
 
 	print('Using config: {}'.format(config))
 	print('Using cpu: {}'.format(cpu))
-	if not compiler == None:
+	if compiler:
 		print('Using compiler: {}'.format(compiler))
 	print('Using {} threads'.format(args.num_threads))
 
